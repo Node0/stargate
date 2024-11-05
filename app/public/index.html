@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stargate -- Workspace</title>
+  <link rel="stylesheet" type="text/css" href="/styles.css">
+<!--   <style>
+    /* Basic layout */
+    body { font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; }
+    .register { display: flex; gap: 10px; }
+    .textarea-container { flex-grow: 1; position: relative; resize: horizontal; overflow: auto; }
+    textarea { width: 100%; height: 200px; resize: none; padding: 10px; font-size: 16px; }
+  </style> -->
+</head>
+<body>
+    <div class="line blue-line"></div>
+    <h1>Collaboration Registers</h1>
+    <div class="line gray-line"></div>
+    <div class="register-container">
+      <div class="textarea-container"><textarea id="register1" placeholder="Register 1"></textarea></div>
+      <div class="textarea-container"><textarea id="register2" placeholder="Register 2"></textarea></div>
+      <div class="textarea-container"><textarea id="register3" placeholder="Register 3"></textarea></div>
+      <div class="textarea-container"><textarea id="register4" placeholder="Register 4"></textarea></div>
+    </div>
+
+    <script>
+      // WebSocket connection logic remains unchanged
+      const ws = new WebSocket('wss://' + location.host);
+
+      const registers = [1, 2, 3, 4].map(num => document.getElementById(`register${num}`));
+
+      registers.forEach((textarea, index) => {
+        textarea.addEventListener('input', () => {
+          const message = JSON.stringify({ index, content: textarea.value });
+          ws.send(message);
+        });
+      });
+
+      ws.onmessage = (event) => {
+        try {
+          const { index, content } = JSON.parse(event.data);
+          if (registers[index]) {
+            registers[index].value = content;
+          }
+        } catch (e) {
+          console.error("Failed to parse WebSocket message as JSON:", e);
+        }
+      };
+
+      ws.onopen = () => console.log("Connected to WebSocket");
+      ws.onclose = () => console.log("Disconnected from WebSocket");
+    </script>
+  </body>
+  </html>

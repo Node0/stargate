@@ -10,6 +10,15 @@ lerna-debug.log*
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
+# SSL excludes
+app/server.cert
+app/server.key
+server.cert
+server.key
+
+*.server.cert
+*.server.key
+
 # Runtime data
 pids
 *.pid

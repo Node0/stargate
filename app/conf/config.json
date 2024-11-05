@@ -1,0 +1,7 @@
+{
+  "prog":{
+    "logging_level": "debug",
+    "initial_wss_availability_url" : { "endpoint" : "/_cat/indices", "response_text" : "Websocket Service available" },
+    "websocket_server_url" : { "endpoint" : "/_data_stream/app_logging_data" }
+  }
+}
