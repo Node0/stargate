@@ -4,7 +4,10 @@ const fs = require('fs');
 const path = require('path');
 const WebSocket = require('ws');
 const { ArgumentParser } = require('argparse');
-const { Print } = require('./utilities');
+const { Print, ErrorInterceptor } = require('./utilities');
+
+// Global uncaught error and exception capture.
+ErrorInterceptor();
 
 class Stargate
 {
@@ -91,7 +94,7 @@ class Stargate
     const responseText = this.config.prog.collab_interface_url.response_text;
     const indexPath = path.join(__dirname, 'public', 'index.html');
 
-    fs.readFileSync(indexPath, 'utf8', (err, data) =>
+    fs.readFile(indexPath, 'utf8', (err, data) =>
     {
       if (err)
       {

@@ -1,6 +1,7 @@
 const colors = require('colors'); // Importing the colors library
 
-function Print(logType, message) {
+function Print(logType, message)
+{
   const stack = new Error().stack;
   const stackLines = stack.split("\n");
 
@@ -15,11 +16,14 @@ function Print(logType, message) {
   const constructorMatch = callerLine.match(/at new (\S+) \(/); // Matches 'at new ClassName ('
   const anonymousMatch = callerLine.match(/at (\S+) \(<anonymous>/); // Matches anonymous functions
 
-  if (methodMatch) {
+  if (methodMatch)
+  {
     functionName = methodMatch[1]; // Captures 'ClassName.methodName'
-  } else if (constructorMatch) {
+  } else if (constructorMatch)
+  {
     functionName = `${constructorMatch[1]}.constructor`; // Captures 'ClassName.constructor'
-  } else if (anonymousMatch) {
+  } else if (anonymousMatch)
+  {
     functionName = `${anonymousMatch[1]} (anonymous)`; // Captures and marks anonymous function calls
   }
 
@@ -29,7 +33,8 @@ function Print(logType, message) {
 
   // Determine the formatted message based on the log type with colors library
   let formattedMessage;
-  switch (logType.toUpperCase()) {
+  switch (logType.toUpperCase())
+  {
     case 'INFO':
       formattedMessage = colors.blue(`<<< ${message} >>>`); // Blue for INFO
       break;
@@ -57,5 +62,39 @@ function Print(logType, message) {
   console.log(`${paddedLogType}: ${timestamp} - ${paddedFunctionName} - ${formattedMessage}`);
 }
 
-module.exports = { Print };
+function ErrorInterceptor()
+{
+  process.on('uncaughtException', (error) =>
+  {
+    Print('EXCEPTION', `Uncaught exception: ${error.message}`);
+    console.error('Stack trace:', error.stack);
+    process.exit(1); // Ensures app restarts with error logged
+  });
+
+  process.on('unhandledRejection', (reason, promise) =>
+  {
+    Print('EXCEPTION', `Unhandled promise rejection: ${reason}`);
+    console.error('At Promise:', promise);
+  });
+
+  process.on('warning', (warning) =>
+  {
+    Print('WARNING', `Node.js warning: ${warning.name} - ${warning.message}`);
+    console.warn(warning.stack);
+  });
+
+  process.on('exit', (code) =>
+  {
+    Print('INFO', `Process exiting with code: ${code}`);
+  });
+
+  process.on('SIGINT', () =>
+  {
+    Print('INFO', 'Received SIGINT. Gracefully shutting down...');
+    process.exit(0);
+  });
+
+}
+
+module.exports = { Print, ErrorInterceptor };
 
