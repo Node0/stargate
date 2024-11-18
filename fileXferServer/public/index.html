@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>File Upload</title>
+  <style>
+    .upload-box {
+      width: 300px;
+      height: 200px;
+      border: 2px dashed #aaa;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      color: #666;
+      margin: 20px;
+      position: relative;
+    }
+
+    .progress-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      height: 10px;
+      width: 0;
+      background-color: green;
+    }
+
+    #fileElem {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Drag and Drop File Upload</h1>
+
+<div class="upload-box" id="uploadBox">
+  Drop file here or <button onclick="document.getElementById('fileElem').click();">browse</button>
+  <div class="progress-bar" id="progressBar"></div>
+</div>
+<input type="file" id="fileElem" onchange="uploadFile(this.files[0])">
+
+<script>
+  const uploadBox = document.getElementById('uploadBox');
+  const progressBar = document.getElementById('progressBar');
+
+  // Handle drag and drop events
+  uploadBox.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    uploadBox.style.borderColor = 'green';
+  });
+
+  uploadBox.addEventListener('dragleave', () => {
+    uploadBox.style.borderColor = '#aaa';
+  });
+
+  uploadBox.addEventListener('drop', (event) => {
+    event.preventDefault();
+    uploadBox.style.borderColor = '#aaa';
+    const file = event.dataTransfer.files[0];
+    if (file) {
+      uploadFile(file);
+    }
+  });
+
+  // Upload file via POST
+  function uploadFile(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/_cat/indices', true);
+
+    // Update progress bar
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percentComplete = (event.loaded / event.total) * 100;
+        progressBar.style.width = percentComplete + '%';
+      }
+    };
+
+    // Reset progress bar after upload completes
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        alert('File uploaded successfully');
+      } else {
+        alert('Error uploading file');
+      }
+      progressBar.style.width = '0%';
+    };
+
+    xhr.send(formData);
+  }
+</script>
+
+</body>
+</html>
