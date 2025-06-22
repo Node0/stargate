@@ -34,16 +34,16 @@ class Stargate
 
     // Load configuration and set up middleware and routes
     this.loadConfig();
-    
+
     // Initialize file manager with storage directory
     this.fileManager = new FileManager(
       path.join(__dirname, 'storage'),
       this.config
     );
-    
+
     // Set up multer for streaming file uploads after FileManager is ready
     this.setupMulter();
-    
+
     this.setupMiddleware();
     this.setupRoutes();
     this.initializeWebSocketHandlers();
@@ -92,19 +92,19 @@ class Stargate
         cb(null, tempName);
       }
     });
-    
+
     // Use configuration-based file size limits
     const maxSizeMB = this.config.prog.file_validation?.max_size_mb || 5000;
     const maxSizeBytes = maxSizeMB * 1024 * 1024;
-    
-    this.upload = multer({ 
+
+    this.upload = multer({
       storage,
-      limits: { 
+      limits: {
         fileSize: maxSizeBytes,
         files: this.config.prog.file_validation?.max_concurrent_uploads || 5
       }
     });
-    
+
     Print('DEBUG', `Multer streaming upload configured with ${maxSizeMB}MB limit`);
   }
 
@@ -115,20 +115,20 @@ class Stargate
     this.app.use((req, res, next) => {
       Print('DEBUG', `Incoming ${req.method} request to ${req.url} from ${req.ip}`);
       Print('DEBUG', `Request headers: ${JSON.stringify(req.headers, null, 2)}`);
-      
+
       // Log response
       const originalSend = res.send;
       res.send = function(data) {
         Print('DEBUG', `Response sent for ${req.method} ${req.url}: status ${res.statusCode}`);
         return originalSend.call(this, data);
       };
-      
+
       const originalRedirect = res.redirect;
       res.redirect = function(location) {
         Print('DEBUG', `Redirect sent for ${req.method} ${req.url} -> ${location}`);
         return originalRedirect.call(this, location);
       };
-      
+
       next();
     });
 
@@ -169,7 +169,7 @@ class Stargate
   setupRoutes()
   {
     Print('DEBUG', 'Setting up routes...');
-    
+
     // Serve static files except index.html (which is now a template)
     this.app.use(express.static(path.join(__dirname, 'public')));
     Print('DEBUG', `Static files served from: ${path.join(__dirname, 'public')}`);
@@ -276,7 +276,7 @@ class Stargate
 
     // Start heartbeat monitoring
     this.startHeartbeatMonitoring();
-    
+
     // Start temp file cleanup service
     this.startTempFileCleanup();
   }
@@ -292,12 +292,12 @@ class Stargate
   {
     Print('DEBUG', `Received WebSocket message from ${clientId}`);
     Print('TRACE', `WebSocket message content: ${message}`);
-    
+
     try
     {
       const data = JSON.parse(message);
       Print('TRACE', `Parsed message data: ${JSON.stringify(data)}`);
-      
+
       // Handle different message types
       if (data.type === 'file_chunk' && data.req)
       {
@@ -318,10 +318,10 @@ class Stargate
         // Default behavior: broadcast to all clients (for text collaboration)
         Print('DEBUG', `Broadcasting text collaboration message from ${clientId} to ${this.wss.clients.size} clients`);
         Print('TRACE', `Text message content: index=${data.index}, content length=${data.content ? data.content.length : 'undefined'}`);
-        
+
         const jsonMessage = JSON.stringify(data);
         let broadcastCount = 0;
-        
+
         // Send to all connected WebSocket clients
         this.wss.clients.forEach((client) =>
         {
@@ -336,7 +336,7 @@ class Stargate
             Print('TRACE', `Skipping client with state: ${client.readyState}`);
           }
         });
-        
+
         Print('INFO', `Broadcasted message from ${clientId} to ${broadcastCount} clients`);
       }
     }
@@ -362,17 +362,17 @@ class Stargate
   async handleClientDisconnect(clientId)
   {
     Print('INFO', `Client ${clientId} disconnected from WebSocket`);
-    
+
     const client = this.clientStates.get(clientId);
     if (client && client.activeTransfers) {
       // Clean up any active file transfers
       for (const [fileId, transfer] of client.activeTransfers) {
         Print('DEBUG', `Cleaning up interrupted transfer for ${fileId}`);
-        
+
         if (transfer.writeStream) {
           transfer.writeStream.destroy();
         }
-        
+
         if (transfer.tempFilePath) {
           try {
             await fs.promises.unlink(transfer.tempFilePath);
@@ -383,7 +383,7 @@ class Stargate
         }
       }
     }
-    
+
     this.clientStates.delete(clientId);
   }
 
@@ -395,7 +395,7 @@ class Stargate
     {
       client.wsFailures++;
       Print('ERROR', `WebSocket error for ${clientId} (failure #${client.wsFailures}): ${error.message}`);
-      
+
       // If failures exceed threshold, could trigger fallback logic here
       if (client.wsFailures >= (this.config.prog.websocket_fallback_failure_event_threshold || 3))
       {
@@ -436,18 +436,18 @@ class Stargate
   {
     const cleanupInterval = this.config.prog.memory_management?.cleanup_interval_ms || 300000; // 5 minutes
     const maxFileAge = this.config.prog.memory_management?.max_temp_file_age_ms || 3600000; // 1 hour
-    
+
     this.tempCleanupInterval = setInterval(async () => {
       try {
         const storageDir = path.join(__dirname, 'storage');
         const files = await fs.promises.readdir(storageDir);
-        
+
         for (const file of files) {
           if (file.startsWith('temp_')) {
             const filePath = path.join(storageDir, file);
             const stats = await fs.promises.stat(filePath);
             const fileAge = Date.now() - stats.mtime.getTime();
-            
+
             if (fileAge > maxFileAge) {
               try {
                 await fs.promises.unlink(filePath);
@@ -471,7 +471,7 @@ class Stargate
   {
     Print('DEBUG', `handleFileChunk called for client ${clientId}`);
     Print('DEBUG', `Chunk data keys: ${Object.keys(chunkData).join(', ')}`);
-    
+
     const client = this.clientStates.get(clientId);
     if (!client) {
       Print('ERROR', `Client ${clientId} not found in clientStates`);
@@ -484,11 +484,11 @@ class Stargate
     if (!client.activeTransfers.has(fileId))
     {
       Print('DEBUG', `Starting new streaming file transfer for ${fileId}`);
-      
+
       // Create a temporary file for streaming write
       const tempFileId = `temp_${fileId}_${Date.now()}`;
       const tempFilePath = path.join(__dirname, 'storage', tempFileId);
-      
+
       client.activeTransfers.set(fileId, {
         tempFilePath,
         tempFileId,
@@ -501,17 +501,17 @@ class Stargate
     }
 
     const transfer = client.activeTransfers.get(fileId);
-    
+
     // Check for duplicate chunks
     if (transfer.chunksReceived.has(chunkIndex)) {
       Print('DEBUG', `Duplicate chunk ${chunkIndex} ignored for ${metadata.filename}`);
       return;
     }
-    
+
     try {
       // Decode and write chunk directly to stream - no memory buffering
       const chunkBuffer = Buffer.from(data, 'base64');
-      
+
       // Write chunk to stream
       await new Promise((resolve, reject) => {
         transfer.writeStream.write(chunkBuffer, (error) => {
@@ -519,14 +519,14 @@ class Stargate
           else resolve();
         });
       });
-      
+
       transfer.chunksReceived.add(chunkIndex);
       transfer.receivedChunks++;
-      
+
       Print('DEBUG', `Chunk ${chunkIndex} streamed to disk, total received: ${transfer.receivedChunks}/${totalChunks}`);
     } catch (error) {
       Print('ERROR', `Failed to stream chunk ${chunkIndex}: ${error.message}`);
-      
+
       // Clean up on error
       transfer.writeStream.destroy();
       try {
@@ -543,12 +543,12 @@ class Stargate
     if (transfer.receivedChunks === totalChunks)
     {
       Print('DEBUG', `All chunks received for ${metadata.filename}, finalizing file`);
-      
+
       // Close the write stream
       await new Promise((resolve) => {
         transfer.writeStream.end(resolve);
       });
-      
+
       try
       {
         // Use streaming file upload method
@@ -570,7 +570,7 @@ class Stargate
       {
         Print('ERROR', `Streaming file upload failed: ${error.message}`);
         Print('DEBUG', `Error stack: ${error.stack}`);
-        
+
         // Clean up temp file on error
         try {
           await fs.promises.unlink(transfer.tempFilePath);
@@ -613,10 +613,10 @@ class Stargate
       }
 
       Print('DEBUG', `Multer file upload: ${req.file.originalname}, temp file: ${req.file.filename}`);
-      
+
       // Process file without loading into memory - use streaming approach
       const tempFilePath = req.file.path;
-      
+
       const fileInfo = await this.fileManager.handleFileUploadStreaming(tempFilePath, {
         filename: req.file.originalname,
         hostname: req.ip || 'unknown',
@@ -627,19 +627,19 @@ class Stargate
 
       this.broadcastFileListUpdate();
       res.json({ success: true, fileInfo });
-      
+
       Print('INFO', `Streaming HTTP file upload completed: ${req.file.originalname}`);
     }
     catch (error)
     {
       Print('ERROR', `Streaming HTTP file upload failed: ${error.message}`);
-      
+
       // Clean up temp file on error
       if (req.file && req.file.path)
       {
         try { await fs.promises.unlink(req.file.path); } catch (e) {}
       }
-      
+
       res.status(500).json({ error: error.message });
     }
   }
@@ -653,7 +653,7 @@ class Stargate
     }
 
     const { filename, data } = req.reqData.body;
-    
+
     if (!filename || !data)
     {
       return res.sendREQ(false, { error: 'Missing filename or data' });
@@ -662,7 +662,7 @@ class Stargate
     try
     {
       const fileBuffer = Buffer.from(data, 'base64');
-      
+
       const fileInfo = await this.fileManager.handleFileUpload(fileBuffer, {
         filename,
         hostname: req.ip || 'unknown'
@@ -670,7 +670,7 @@ class Stargate
 
       this.broadcastFileListUpdate();
       res.sendREQ(true, { fileInfo });
-      
+
       Print('INFO', `Legacy HTTP file upload completed: ${filename}`);
     }
     catch (error)
@@ -699,7 +699,7 @@ class Stargate
   async handleFileDownload(req, res)
   {
     const { filename } = req.params;
-    
+
     if (!filename)
     {
       return res.sendREQ(false, { error: 'Filename required' });
@@ -713,11 +713,11 @@ class Stargate
       }
 
       const fileData = await this.fileManager.getFileData(filename);
-      
+
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.setHeader('Content-Type', 'application/octet-stream');
       res.send(fileData);
-      
+
       Print('INFO', `File download completed: ${filename}`);
     }
     catch (error)
@@ -738,7 +738,7 @@ class Stargate
     Print('DEBUG', `  GET /api/files -> file list`);
     Print('DEBUG', `  GET /api/download/:filename -> file download`);
     Print('DEBUG', `  WebSocket upgrade at ${this.config.prog.websocket_server_url.route}`);
-    
+
     this.server.listen(this.args.port, this.args.hostname, () =>
     {
       Print('INFO', `Server running at https://${this.args.hostname}:${this.args.port}`);

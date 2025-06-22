@@ -21,7 +21,7 @@ if (!fs.existsSync(LOGGING_CONFIG.logsDir)) {
 function Print(logType, message)
 {
   const upperLogType = logType.toUpperCase();
-  
+
   // Check if we should log this level
   if (upperLogType === 'TRACE' && !LOGGING_CONFIG.enableTrace) return;
   if (upperLogType === 'DEBUG' && !LOGGING_CONFIG.enableDebug) return;
@@ -95,7 +95,7 @@ function Print(logType, message)
   if (upperLogType !== 'TRACE') {
     console.log(`${paddedLogType}: ${timestamp} - ${paddedFunctionName} - ${formattedMessage}`);
   }
-  
+
   // Write to appropriate log files
   writeToLogFiles(upperLogType, plainMessage);
 }
@@ -110,13 +110,13 @@ function writeToLogFiles(logType, message)
         // Operational events go to access.log
         fs.appendFileSync(LOGGING_CONFIG.accessLogPath, message + '\n');
         break;
-      
+
       case 'ERROR':
       case 'EXCEPTION':
         // Errors go to error.log
         fs.appendFileSync(LOGGING_CONFIG.errorLogPath, message + '\n');
         break;
-      
+
       case 'DEBUG':
       case 'TRACE':
         // Debug/trace go to debug.log
@@ -265,14 +265,14 @@ class FileManager
     catch (error)
     {
       Print('ERROR', `Streaming file upload failed: ${error.message}`);
-      
+
       // Clean up temp file on error
       try {
         await fs.promises.unlink(tempFilePath);
       } catch (cleanupError) {
         Print('DEBUG', `Temp file cleanup failed: ${cleanupError.message}`);
       }
-      
+
       throw error;
     }
   }
@@ -301,10 +301,10 @@ class FileManager
   {
     const ext = path.extname(originalFilename);
     const basename = path.basename(originalFilename, ext);
-    
+
     // Every file gets the ID suffix - ensures trackability across systems
     const filenameWithId = `${basename}_${fileId}${ext}`;
-    
+
     Print('DEBUG', `Created filename with ID: ${originalFilename} -> ${filenameWithId}`);
     return filenameWithId;
   }
