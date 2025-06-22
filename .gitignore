@@ -158,3 +158,11 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+
+# Claude files
+claude.json
+CLAUDE.md
+
+# Claude folder
+.claude
