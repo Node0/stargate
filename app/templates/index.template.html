@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stargate -- Workspace</title>
+  <link rel="stylesheet" type="text/css" href="/styles.css">
+  <script src="/file-interface.js"></script>
+</head>
+<body>
+    <!-- Mode Indicator & Peer Connection UI -->
+    <div class="mode-container">
+      <button id="modeIndicator" class="mode-indicator client-mode" disabled>Client Mode</button>
+      <div id="peerConnectUI" class="peer-connect-ui hidden">
+        <input type="text" id="peerHostInput" placeholder="https://10.50.50.250:5900" pattern="https?://[\w\.-]+:\d+">
+        <button id="peerConnectBtn" disabled>Connect</button>
+      </div>
+    </div>
+
+    <div class="line blue-line"></div>
+    <h1>Collaboration Registers</h1>
+    <div class="line gray-line"></div>
+    
+    <div class="register-container">
+      <div class="textarea-container"><textarea id="register1" placeholder="Register 1"></textarea></div>
+      <div class="textarea-container"><textarea id="register2" placeholder="Register 2"></textarea></div>
+      <div class="textarea-container"><textarea id="register3" placeholder="Register 3"></textarea></div>
+      
+      <!-- Files Interface (formerly Register 4) -->
+      <div class="register files-register" id="register4">
+        <div class="register-header">
+          <h3>Files</h3>
+          <input type="text" id="fileSearchFilter" placeholder="Search files..." class="file-search">
+          <button id="downloadAllBtn" class="sync-button">Download All</button>
+        </div>
+        <div id="dropZone" class="drop-zone">
+          <p>Drop files here or click to upload</p>
+          <input type="file" id="fileInput" multiple style="display: none;">
+        </div>
+        <div id="fileList" class="file-list">
+          <table id="fileTable">
+            <thead>
+              <tr>
+                <th class="sortable" data-sort="displayName">Filename ↕</th>
+                <th class="sortable" data-sort="size">Size ↕</th>
+                <th class="sortable" data-sort="timestamp">Timestamp ↕</th>
+                <th class="sortable" data-sort="uploaderHostname">Uploader ↕</th>
+                <th class="sortable" data-sort="hash">Hash ↕</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="fileTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Context Menu for File Actions -->
+    <div id="contextMenu" class="context-menu hidden">
+      <div class="context-item" id="contextDownload">Download</div>
+      <div class="context-item" id="contextSync">Sync</div>
+      <div class="context-item" id="contextDelete">Delete</div>
+    </div>
+
+    <script>
+      // Establish WebSocket connection using dynamic location.host and injected route
+      const ws = new WebSocket(`wss://${location.host}[[WEBSOCKET_UPGRADE_ROUTE]]`);
+
+      // Text collaboration for registers 1-3
+      const textRegisters = [1, 2, 3].map(num => document.getElementById(`register${num}`));
+
+      textRegisters.forEach((textarea, index) => {
+        textarea.addEventListener('input', () => {
+          // Serialize message before sending
+          const message = JSON.stringify({ index, content: textarea.value });
+          console.log(`Sending text message for register ${index}:`, message);
+          
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(message);
+            console.log("Message sent successfully");
+          } else {
+            console.error("WebSocket not open, state:", ws.readyState);
+          }
+        });
+      });
+
+      // Enhanced WebSocket message handling
+      ws.onmessage = (event) => {
+        console.log("Received WebSocket message:", event.data);
+        
+        try {
+          const data = JSON.parse(event.data);
+          console.log("Parsed message data:", data);
+          
+          // Handle text collaboration updates
+          if (typeof data.index === 'number' && data.content !== undefined) {
+            console.log(`Updating register ${data.index} with content:`, data.content);
+            if (textRegisters[data.index]) {
+              textRegisters[data.index].value = data.content;
+              console.log("Register updated successfully");
+            } else {
+              console.error(`Register ${data.index} not found`);
+            }
+          }
+          // Handle file list updates
+          else if (data.type === 'file_list_update') {
+            console.log("Received file list update:", data.files);
+            if (window.fileHandler) {
+              window.fileHandler.updateFileList(data.files);
+            } else {
+              console.error("FileHandler not available for file list update");
+            }
+          }
+          // Handle config updates
+          else if (data.type === 'config_update') {
+            console.log("Received config update:", data.config);
+            if (window.fileHandler) {
+              window.fileHandler.oversizeThreshold = data.config.oversize_file_in_mb * 1024 * 1024;
+            }
+          }
+          else {
+            console.log("Unhandled message type:", data);
+          }
+        } catch (e) {
+          console.error("Failed to parse WebSocket message as JSON:", e);
+        }
+      };
+
+      ws.onopen = () => {
+        console.log("Connected to WebSocket");
+        
+        // Check if classes are available
+        console.log("FileHandler available:", typeof FileHandler);
+        console.log("ModeManager available:", typeof ModeManager);
+        console.log("TableSorter available:", typeof TableSorter);
+        
+        // Initialize file management
+        try {
+          initializeFileInterface();
+          console.log("File interface initialized successfully");
+        } catch (error) {
+          console.error("Failed to initialize file interface:", error);
+        }
+      };
+      
+      ws.onclose = () => console.log("Disconnected from WebSocket");
+
+      // Initialize file interface when WebSocket is ready
+      function initializeFileInterface() {
+        window.fileHandler = new FileHandler(ws);
+        window.modeManager = new ModeManager(window.fileHandler);
+        window.tableSorter = new TableSorter('fileTable');
+        
+        setupFileInterface();
+      }
+
+      // File interface setup
+      function setupFileInterface() {
+        // Drag and drop functionality
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        dropZone.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+          dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+          e.preventDefault();
+          dropZone.classList.remove('drag-over');
+          handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+          handleFiles(e.target.files);
+        });
+
+        // Search filter
+        document.getElementById('fileSearchFilter').addEventListener('input', () => {
+          if (window.fileHandler) {
+            window.fileHandler.renderFileTable();
+          }
+        });
+
+        // Download all button
+        document.getElementById('downloadAllBtn').addEventListener('click', () => {
+          if (window.fileHandler) {
+            window.fileHandler.handleDownloadAll();
+          }
+        });
+      }
+
+      // Handle file uploads
+      function handleFiles(files) {
+        Array.from(files).forEach(file => {
+          if (window.fileHandler) {
+            window.fileHandler.uploadFile(file);
+          }
+        });
+      }
+    </script>
+</body>
+</html>

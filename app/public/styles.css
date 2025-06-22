@@ -69,3 +69,314 @@
     height: calc(100% - 10px); /* Adjust for padding/margins */
 }
 
+/* Mode Indicator & Peer Connection UI */
+.mode-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+}
+
+.mode-indicator {
+  padding: 8px 16px;
+  border: none;
+  font-weight: bold;
+  cursor: default;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.client-mode {
+  background-color: #c8e6c9; /* light pastel green */
+}
+
+.peer-mode {
+  background-color: #e1bee7; /* light pastel purple */
+  cursor: pointer;
+}
+
+.peer-connected {
+  background-color: #bbdefb; /* light pastel blue */
+}
+
+.peer-connect-ui {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.peer-connect-ui input {
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  width: 200px;
+}
+
+.peer-connect-ui button {
+  padding: 6px 12px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.peer-connect-ui button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+.hidden {
+  display: none;
+}
+
+/* Files Interface Styling */
+.files-register {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  padding: 10px;
+  margin-top: 10px;
+}
+
+.register-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+}
+
+.register-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #333;
+}
+
+.file-search {
+  flex-grow: 1;
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.sync-button {
+  padding: 8px 16px;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.sync-button:hover {
+  background-color: #218838;
+}
+
+/* Drop Zone Styling */
+.drop-zone {
+  border: 2px dashed #ccc;
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+  background-color: #f9f9f9;
+  cursor: pointer;
+  margin-bottom: 15px;
+  transition: all 0.3s ease;
+}
+
+.drop-zone:hover, .drop-zone.drag-over {
+  border-color: #007bff;
+  background-color: #e3f2fd;
+}
+
+.drop-zone p {
+  margin: 0;
+  color: #666;
+  font-size: 16px;
+}
+
+/* File List Styling */
+.file-list {
+  flex-grow: 1;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+#fileTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+#fileTable th {
+  background-color: #f8f9fa;
+  padding: 10px 8px;
+  text-align: left;
+  border-bottom: 2px solid #dee2e6;
+  font-weight: bold;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+#fileTable th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+#fileTable th.sortable:hover {
+  background-color: #e9ecef;
+}
+
+#fileTable td {
+  padding: 8px;
+  border-bottom: 1px solid #dee2e6;
+  vertical-align: middle;
+}
+
+#fileTable tr:hover {
+  background-color: #f5f5f5;
+}
+
+.hash-cell {
+  font-family: monospace;
+  font-size: 12px;
+  color: #666;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download-btn {
+  padding: 4px 8px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.download-btn:hover {
+  background-color: #0056b3;
+}
+
+/* Context Menu Styling */
+.context-menu {
+  position: absolute;
+  background-color: white;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  z-index: 1000;
+  min-width: 120px;
+}
+
+.context-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  border-bottom: 1px solid #eee;
+}
+
+.context-item:last-child {
+  border-bottom: none;
+}
+
+.context-item:hover {
+  background-color: #f5f5f5;
+}
+
+/* Oversize Dialog Styling */
+.oversize-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.dialog-content {
+  background-color: white;
+  padding: 20px;
+  border-radius: 8px;
+  max-width: 500px;
+  width: 90%;
+}
+
+.dialog-content h3 {
+  margin-top: 0;
+  color: #333;
+}
+
+.dialog-content ul {
+  margin: 15px 0;
+  padding-left: 20px;
+}
+
+.dialog-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.dialog-buttons button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.dialog-buttons button:first-child {
+  background-color: #dc3545;
+  color: white;
+}
+
+.dialog-buttons button:last-child {
+  background-color: #6c757d;
+  color: white;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .register-container {
+    flex-direction: column;
+    height: auto;
+  }
+  
+  .mode-container {
+    position: relative;
+    top: auto;
+    right: auto;
+    justify-content: center;
+    margin-bottom: 10px;
+  }
+  
+  .peer-connect-ui input {
+    width: 150px;
+  }
+}
+

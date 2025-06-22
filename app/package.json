@@ -1,18 +1,19 @@
 {
     "name": "Stargate -- A realtime websocket collaboration server",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "A Node.js server for collaborative text editing with resizable text areas.",
     "main": "server.js",
     "scripts": {
-      "start": "node server.js"
+        "start": "node server.js"
     },
     "author": "Joe Hacobian",
     "license": "MIT",
     "dependencies": {
-      "argparse": "^2.0.1",
-      "express": "^5.0.0",
-      "ws": "^8.11.0",
-      "colors": "^1.4.0"
+        "argparse": "^2.0.1",
+        "colors": "^1.4.0",
+        "express": "^5.0.0",
+        "multer": "^2.0.1",
+        "shorthash2": "^1.0.5",
+        "ws": "^8.11.0"
     }
-  }
-
+}

@@ -1,7 +1,27 @@
 {
-  "prog":{
+  "prog": {
     "logging_level": "debug",
-    "collab_interface_url" : { "route" : "/_cat/indices", "response_text" : "Websocket Service available" },
-    "websocket_server_url" : { "route" : "/_data_stream/app_logging_data" }
+    "collab_interface_url": { "route": "/_cat/indices", "response_text": "Websocket Service available" },
+    "websocket_server_url": { "route": "/_data_stream/app_logging_data" },
+    "websocket_fallback_failure_event_threshold": 3,
+    "oversize_file_in_mb": 50,
+    "chunk_size_bytes": 32768,
+    "heartbeat_interval_ms": 30000,
+    "heartbeat_timeout_ms": 60000,
+    "req_header_max_size": 2048,
+    "enforce_req_header": true,
+    "file_validation": {
+      "max_size_mb": 5000,
+      "allowed_extensions": ["*"],
+      "websocket_size_limit_mb": 50,
+      "http_streaming_threshold_mb": 50,
+      "legacy_base64_limit_mb": 10,
+      "max_concurrent_uploads": 5
+    },
+    "memory_management": {
+      "max_temp_files": 20,
+      "cleanup_interval_ms": 300000,
+      "max_temp_file_age_ms": 3600000
+    }
   }
 }
