@@ -116,12 +116,14 @@ class Stargate
       Print('DEBUG', `Incoming ${req.method} request to ${req.url} from ${req.ip}`);
       Print('DEBUG', `Request headers: ${JSON.stringify(req.headers, null, 2)}`);
 
-      // Log response
-      const originalSend = res.send;
-      res.send = function(data) {
-        Print('DEBUG', `Response sent for ${req.method} ${req.url}: status ${res.statusCode}`);
-        return originalSend.call(this, data);
-      };
+      // Log response - skip for file downloads to avoid interfering with binary data
+      if (!req.url.startsWith('/api/download/')) {
+        const originalSend = res.send;
+        res.send = function(data) {
+          Print('DEBUG', `Response sent for ${req.method} ${req.url}: status ${res.statusCode}`);
+          return originalSend.call(this, data);
+        };
+      }
 
       const originalRedirect = res.redirect;
       res.redirect = function(location) {
@@ -267,6 +269,9 @@ class Stargate
       });
 
       Print('INFO', `Client ${clientId} connected to WebSocket`);
+
+      // Send initial file list and config to new client
+      this.sendInitialDataToClient(ws);
 
       ws.on('message', (message) => this.handleWebSocketMessage(clientId, message));
       ws.on('pong', () => this.handleHeartbeat(clientId));
@@ -602,6 +607,36 @@ class Stargate
     Print('INFO', `Broadcasted file list update to ${this.wss.clients.size} clients`);
   }
 
+  // Send initial data to a newly connected client
+  sendInitialDataToClient(ws)
+  {
+    try
+    {
+      // Send current file list
+      const fileList = this.fileManager.getFileList();
+      const fileListMessage = JSON.stringify({
+        type: 'file_list_update',
+        files: fileList
+      });
+      ws.send(fileListMessage);
+
+      // Send current configuration
+      const configMessage = JSON.stringify({
+        type: 'config_update',
+        config: {
+          oversize_file_in_mb: this.config.prog.oversize_file_in_mb || 100
+        }
+      });
+      ws.send(configMessage);
+
+      Print('INFO', `Sent initial data to new client: ${fileList.length} files`);
+    }
+    catch (error)
+    {
+      Print('ERROR', `Failed to send initial data to client: ${error.message}`);
+    }
+  }
+
   // New streaming HTTP upload endpoint using multer
   async handleHttpUploadMulter(req, res)
   {
@@ -702,28 +737,158 @@ class Stargate
 
     if (!filename)
     {
-      return res.sendREQ(false, { error: 'Filename required' });
+      return res.status(400).json({ error: 'Filename required' });
     }
 
     try
     {
       if (!this.fileManager.fileExists(filename))
       {
-        return res.status(404).sendREQ(false, { error: 'File not found' });
+        return res.status(404).json({ error: 'File not found' });
       }
 
       const fileData = await this.fileManager.getFileData(filename);
+      const filePath = path.join(this.fileManager.storageDir, filename);
+      
+      // Get file extension and set appropriate MIME type
+      const ext = path.extname(filename).toLowerCase();
+      let contentType = 'application/octet-stream';
+      
+      // Handle .tar.gz special case
+      if (filename.toLowerCase().endsWith('.tar.gz')) {
+        contentType = 'application/gzip';
+      } else {
+        switch (ext) {
+          // Images
+          case '.png':
+            contentType = 'image/png';
+            break;
+          case '.jpg':
+          case '.jpeg':
+            contentType = 'image/jpeg';
+            break;
+          case '.gif':
+            contentType = 'image/gif';
+            break;
+          case '.heic':
+            contentType = 'image/heic';
+            break;
+          case '.webp':
+            contentType = 'image/webp';
+            break;
+          case '.jp2':
+          case '.jpx':
+          case '.j2k':
+            contentType = 'image/jp2';
+            break;
+          case '.tiff':
+          case '.tif':
+            contentType = 'image/tiff';
+            break;
+          case '.psd':
+            contentType = 'image/vnd.adobe.photoshop';
+            break;
+          
+          // Documents
+          case '.pdf':
+            contentType = 'application/pdf';
+            break;
+          case '.pptx':
+            contentType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+            break;
+          case '.docx':
+            contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            break;
+          
+          // Code files
+          case '.py':
+            contentType = 'text/x-python';
+            break;
+          case '.js':
+            contentType = 'application/javascript';
+            break;
+          case '.rs':
+            contentType = 'text/x-rust';
+            break;
+          case '.php':
+            contentType = 'application/x-httpd-php';
+            break;
+          case '.html':
+            contentType = 'text/html';
+            break;
+          case '.css':
+            contentType = 'text/css';
+            break;
+          case '.sh':
+            contentType = 'application/x-sh';
+            break;
+          
+          // Data/Config
+          case '.txt':
+            contentType = 'text/plain';
+            break;
+          case '.json':
+            contentType = 'application/json';
+            break;
+          
+          // ML/AI files
+          case '.safetensors':
+            contentType = 'application/octet-stream';
+            break;
+          case '.pt':
+          case '.pth':
+            contentType = 'application/octet-stream';
+            break;
+          
+          // Video
+          case '.mp4':
+            contentType = 'video/mp4';
+            break;
+          case '.mov':
+            contentType = 'video/quicktime';
+            break;
+          case '.mkv':
+            contentType = 'video/x-matroska';
+            break;
+          
+          // Audio
+          case '.mp3':
+            contentType = 'audio/mpeg';
+            break;
+          case '.aac':
+            contentType = 'audio/aac';
+            break;
+          
+          // Archives/Disk Images
+          case '.zip':
+            contentType = 'application/zip';
+            break;
+          case '.dmg':
+            contentType = 'application/x-apple-diskimage';
+            break;
+          case '.iso':
+            contentType = 'application/x-iso9660-image';
+            break;
+          case '.pkg':
+            contentType = 'application/x-newton-compatible-pkg';
+            break;
+          case '.bin':
+            contentType = 'application/octet-stream';
+            break;
+        }
+      }
 
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', fileData.length);
       res.send(fileData);
 
-      Print('INFO', `File download completed: ${filename}`);
+      Print('INFO', `File download completed: ${filename} (${contentType})`);
     }
     catch (error)
     {
       Print('ERROR', `File download failed: ${error.message}`);
-      res.sendREQ(false, { error: error.message });
+      res.status(500).json({ error: error.message });
     }
   }
 

@@ -151,7 +151,7 @@ class FileManager {
  }
 
  async handleFileUpload(fileData, metadata) {
-   // Port shorthash2 collision avoidance from fileXferServer
+   // Implement collision avoidance using shorthash2
    const hash = this.generateShortHash(fileData);
    const safeFilename = this.ensureUniqueFilename(metadata.filename, hash);
 

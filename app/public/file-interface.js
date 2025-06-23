@@ -8,6 +8,9 @@ class FileHandler {
     this.websocketSizeLimit = 50 * 1024 * 1024; // 50MB WebSocket limit
     this.legacyUploadLimit = 10 * 1024 * 1024; // 10MB legacy upload limit
     this.setupFileListUpdates();
+    
+    // Fetch initial file list immediately as fallback
+    this.fetchInitialFileList();
   }
 
   setupFileListUpdates() {
@@ -52,6 +55,15 @@ class FileHandler {
     } catch (error) {
       console.error('Failed to fetch file list via HTTP:', error);
     }
+  }
+
+  // Fetch initial file list when FileHandler is first created
+  async fetchInitialFileList() {
+    console.log('Fetching initial file list...');
+    // Small delay to allow WebSocket to potentially connect first
+    setTimeout(() => {
+      this.fetchFileListViaHttp();
+    }, 1000);
   }
 
   updateFileList(files) {
