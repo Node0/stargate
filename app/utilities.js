@@ -55,31 +55,56 @@ function Print(logType, message)
   const logTypePadding = 10;
   const functionNamePadding = 40;
 
-  // Determine the formatted message based on the log type with colors library
-  let formattedMessage;
-  switch (upperLogType)
-  {
-    case 'INFO':
-      formattedMessage = colors.blue(`<<< ${message} >>>`); // Blue for INFO
-      break;
-    case 'WARNING':
-      formattedMessage = colors.yellow.underline(`>>> ${message} <<<`); // Yellow and underlined for WARNING
-      break;
-    case 'ERROR':
-      formattedMessage = colors.red.bold(`### ${message} ###`); // Red and bold for ERROR
-      break;
-    case 'EXCEPTION':
-      formattedMessage = colors.magenta(`!!! ${message} !!!`); // Magenta for EXCEPTION
-      break;
-    case 'DEBUG':
-      formattedMessage = colors.cyan(`[D] ${message}`); // Cyan for DEBUG
-      break;
-    case 'TRACE':
-      formattedMessage = colors.gray(`[T] ${message}`); // Gray for TRACE
-      break;
-    default:
-      formattedMessage = message; // No color for unknown log types
-  }
+
+/* Mapping of logType to symbols
+*  Note: Uses [head, tail] array design to support asymmetric symbol pairs
+*  like ((( ))) for WARNING, [[[ ]]] for DEBUG, and potential {{{ }}} patterns.
+*  This allows proper opening/closing symbol semantics rather than just duplicating.
+*/
+  const logTypeSymbols = {
+    'SUCCESS': ['^^^', '^^^'],
+    'FAILURE': ['###', '###'],
+    'STATE': ['~~~', '~~~'],
+    'INFO': ['---', '---'],
+    'IMPORTANT': ['===', '==='],
+    'CRITICAL': ['***', '***'],
+    'EXCEPTION': ['!!!', '!!!'],
+    'WARNING': ['(((', ')))'],
+    'DEBUG': ['[[[', ']]]'],
+    'ATTEMPT': ['???', '???'],
+    'STARTING': ['>>>', '>>>'],
+    'PROGRESS': ['vvv', 'vvv'],
+    'COMPLETED': ['<<<', '<<<'],
+    'ERROR': ['###', '###'], // Keep ERROR for backward compatibility
+    'TRACE': ['...', '...']  // Add TRACE support
+  };
+
+  // Mapping of logType to colors
+  const logTypeColors = {
+    'SUCCESS': colors.green,
+    'FAILURE': colors.red.bold,
+    'STATE': colors.cyan,
+    'INFO': colors.blue,
+    'IMPORTANT': colors.magenta,
+    'CRITICAL': colors.red.bold,
+    'EXCEPTION': colors.red.bold,
+    'WARNING': colors.yellow,
+    'DEBUG': colors.white,
+    'ATTEMPT': colors.cyan,
+    'STARTING': colors.green,
+    'PROGRESS': colors.blue,
+    'COMPLETED': colors.green,
+    'ERROR': colors.red.bold, // Keep ERROR for backward compatibility
+    'TRACE': colors.gray
+  };
+
+  // Get symbols and color for the log type
+  const symbols = logTypeSymbols[upperLogType] || ['', ''];
+  const colorFunc = logTypeColors[upperLogType] || ((text) => text);
+  const [beforeSymbol, afterSymbol] = symbols;
+
+  // Create formatted message with symbols
+  const formattedMessage = colorFunc(`${beforeSymbol} ${message} ${afterSymbol}`);
 
   // Get the current timestamp
   const timestamp = new Date().toISOString();
@@ -88,16 +113,16 @@ function Print(logType, message)
   const paddedLogType = upperLogType.padEnd(logTypePadding);
   const paddedFunctionName = functionName.padEnd(functionNamePadding);
 
-  // Create the log line (without colors for file writing)
-  const plainMessage = `${paddedLogType}: ${timestamp} - ${paddedFunctionName} - ${message}`;
-
   // Log to console (with colors) - except TRACE which only goes to file
   if (upperLogType !== 'TRACE') {
     console.log(`${paddedLogType}: ${timestamp} - ${paddedFunctionName} - ${formattedMessage}`);
   }
 
+  // Create the plain message for file logging (without colors)
+  const plainLogMessage = `${paddedLogType}: ${timestamp} - ${paddedFunctionName} - ${beforeSymbol} ${message} ${afterSymbol}`;
+
   // Write to appropriate log files
-  writeToLogFiles(upperLogType, plainMessage);
+  writeToLogFiles(upperLogType, plainLogMessage);
 }
 
 function writeToLogFiles(logType, message)
@@ -107,18 +132,27 @@ function writeToLogFiles(logType, message)
     switch (logType) {
       case 'INFO':
       case 'WARNING':
+      case 'STATE':
+      case 'STARTING':
+      case 'PROGRESS':
+      case 'COMPLETED':
+      case 'SUCCESS':
         // Operational events go to access.log
         fs.appendFileSync(LOGGING_CONFIG.accessLogPath, message + '\n');
         break;
 
       case 'ERROR':
       case 'EXCEPTION':
+      case 'FAILURE':
+      case 'CRITICAL':
         // Errors go to error.log
         fs.appendFileSync(LOGGING_CONFIG.errorLogPath, message + '\n');
         break;
 
       case 'DEBUG':
       case 'TRACE':
+      case 'ATTEMPT':
+      case 'IMPORTANT':
         // Debug/trace go to debug.log
         fs.appendFileSync(LOGGING_CONFIG.debugLogPath, message + '\n');
         break;

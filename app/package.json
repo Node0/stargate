@@ -4,7 +4,9 @@
     "description": "A Node.js server for collaborative text editing with resizable text areas.",
     "main": "server.js",
     "scripts": {
-        "start": "node server.js"
+        "start": "node server.js",
+        "test": "jest",
+        "test:watch": "jest --watch"
     },
     "author": "Joe Hacobian",
     "license": "MIT",
@@ -15,5 +17,8 @@
         "multer": "^2.0.1",
         "shorthash2": "^1.0.5",
         "ws": "^8.11.0"
+    },
+    "devDependencies": {
+        "jest": "^29.7.0"
     }
 }
