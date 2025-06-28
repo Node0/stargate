@@ -1,4 +1,4 @@
-const { Print } = require('../utilities');
+const { Print } = require('../backend/utilities');
 
 class PrintTests {
   constructor() {

@@ -7,10 +7,10 @@ const shorthash = require('shorthash2');
 const LOGGING_CONFIG = {
   enableTrace: process.env.TRACE_LOGGING === 'true' || false,
   enableDebug: process.env.DEBUG_LOGGING === 'true' || process.env.TRACE_LOGGING === 'true' || true, // Default to debug
-  logsDir: path.join(__dirname, 'logs'),
-  accessLogPath: path.join(__dirname, 'logs', 'access.log'),
-  errorLogPath: path.join(__dirname, 'logs', 'error.log'),
-  debugLogPath: path.join(__dirname, 'logs', 'debug.log')
+  logsDir: path.join(__dirname, '../logs'),
+  accessLogPath: path.join(__dirname, '../logs', 'access.log'),
+  errorLogPath: path.join(__dirname, '../logs', 'error.log'),
+  debugLogPath: path.join(__dirname, '../logs', 'debug.log')
 };
 
 // Ensure logs directory exists

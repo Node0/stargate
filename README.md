@@ -1,8 +1,7 @@
 # Stargate
 ### A Real-time WebSocket Collaboration Server
 
-Stargate is a Node.js server designed for collaborative text editing across machines in a local network. It provides a workspace where users can share files and code seamlessly through resizable text areas, making collaboration efficient and straightforward.
-
+Stargate is a NodeJS server running on the bun engine, designed for collaborative text editing across machines in a local network. It provides a workspace where users can share files and code seamlessly through resizable text areas, making collaboration efficient and straightforward.
 
 ## Basic Installation & Startup
 
@@ -42,24 +41,28 @@ Stargate allows for configurable startup parameters via command-line arguments:
 
 #### General Folder structure & location of SSL (cert & key) files
 **Note: User must create and supply the SSL files**
-
 ```
-
 ├── LICENSE
 ├── README.md
 ├── app
-│  ├── conf
-│  │  └── config.json
-│  ├── package-lock.json
-│  ├── package.json
-│  ├── public
-│  │  ├── index.html
-│  │  └── styles.css
-│  ├── server.cert
-│  ├── server.js
-│  ├── server.key
-│  ├── tests
-│  └── utilities.js
+│   ├── server.js          # Entry point
+│   ├── backend/
+│   │   ├── stargate.js    # Main server class
+│   │   └── utilities.js   # Shared utilities
+│   ├── frontend/
+│   │   ├── file-manager-ui.js
+│   │   └── styles.css
+│   ├── templates/
+│   │   └── index.template.html
+│   ├── conf/
+│   │   └── config.json
+│   ├── logs/
+│   ├── storage/
+│   ├── tests/
+│   ├── server.cert
+│   ├── server.key
+│   ├── package.json
+│   └── package-lock.json
 └── reference_files
 ```
 
