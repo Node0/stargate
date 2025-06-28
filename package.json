@@ -1,0 +1,48 @@
+{
+  "name": "stargate",
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "npm run build && npm run server",
+    "server": "bun run server/server.ts --hostname=0.0.0.0 --port=5900",
+    "build": "parcel build src/index.html --dist-dir dist",
+    "dev": "parcel serve src/index.html --https --cert ./server.cert --key ./server.key --port 5901",
+    "clean": "rm -rf dist .parcel-cache",
+    "test": "vitest"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "WebSocket-based real-time collaboration platform with Aurelia 2.0 and TypeScript",
+  "dependencies": {
+    "@aurelia/kernel": "^2.0.0-beta.24",
+    "@aurelia/metadata": "^2.0.0-beta.24",
+    "@aurelia/runtime-html": "^2.0.0-beta.24",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.3",
+    "@types/multer": "^1.4.13",
+    "@types/ws": "^8.18.1",
+    "argparse": "^2.0.1",
+    "aurelia": "^2.0.0-beta.24",
+    "better-sqlite3": "^12.1.1",
+    "colors": "^1.4.0",
+    "express": "^5.1.0",
+    "multer": "^2.0.1",
+    "shorthash2": "^1.0.5",
+    "ws": "^8.18.2"
+  },
+  "devDependencies": {
+    "@aurelia/parcel-transformer": "^2.0.0-beta.24",
+    "@parcel/transformer-typescript-tsc": "^2.15.4",
+    "@types/argparse": "^2.0.17",
+    "@types/node": "^24.0.6",
+    "npm-run-all": "^4.1.5",
+    "os-browserify": "^0.3.0",
+    "parcel": "^2.15.4",
+    "path-browserify": "^1.0.1",
+    "process": "^0.11.10",
+    "typescript": "^5.8.3",
+    "util": "^0.12.5",
+    "vitest": "^3.2.4"
+  }
+}

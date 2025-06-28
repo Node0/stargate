@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "node",
+    "skipLibCheck": true,
+    "target": "ES2017",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "importHelpers": true,
+    "sourceMap": true,
+    "paths": {
+      "@/*": ["./src/*"],
+      "@services/*": ["./src/services/*"],
+      "@components/*": ["./src/components/*"],
+      "@shared/*": ["./shared/*"]
+    },
+    "types": ["node"]
+  },
+  "include": ["src/**/*", "server/**/*", "shared/**/*"],
+  "exclude": ["node_modules", "dist", ".parcel-cache"]
+}

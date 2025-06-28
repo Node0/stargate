@@ -1,22 +1,97 @@
-const express = require('express');
-const https = require('https');
-const fs = require('fs');
-const path = require('path');
-const WebSocket = require('ws');
-const multer = require('multer');
-const { ArgumentParser } = require('argparse');
-const { Print, ErrorInterceptor, RequestEncoder, FileManager } = require('./utilities');
+import express, { Request, Response, NextFunction } from 'express';
+import https from 'https';
+import fs from 'fs';
+import path from 'path';
+import WebSocket from 'ws';
+import multer from 'multer';
+import { ArgumentParser } from 'argparse';
+import { Print, ErrorInterceptor, RequestEncoder, FileManager } from './utilities';
 
-// Global uncaught error and exception capture.
+// Global uncaught error and exception capture
 ErrorInterceptor();
 
-class Stargate
-{
-  constructor()
-  {
+interface ParsedArgs {
+  hostname: string;
+  port: number;
+}
+
+interface Config {
+  prog: {
+    collab_interface_url: { route: string; response_text?: string };
+    websocket_server_url: { route: string };
+    websocket_fallback_failure_event_threshold?: number;
+    oversize_file_in_mb?: number;
+    chunk_size_bytes?: number;
+    heartbeat_interval_ms?: number;
+    heartbeat_timeout_ms?: number;
+    req_header_max_size?: number;
+    enforce_req_header?: boolean;
+    file_validation?: {
+      max_size_mb?: number;
+      allowed_extensions?: string[];
+      websocket_size_limit_mb?: number;
+      http_streaming_threshold_mb?: number;
+      legacy_base64_limit_mb?: number;
+      max_concurrent_uploads?: number;
+    };
+    memory_management?: {
+      max_temp_files?: number;
+      cleanup_interval_ms?: number;
+      max_temp_file_age_ms?: number;
+    };
+  };
+}
+
+interface ClientState {
+  ws: WebSocket;
+  wsFailures: number;
+  usingHttpFallback: boolean;
+  activeTransfers: Map<string, FileTransfer>;
+  lastHeartbeat: number;
+  hostname?: string;
+}
+
+interface FileTransfer {
+  tempFilePath: string;
+  tempFileId: string;
+  writeStream: fs.WriteStream;
+  metadata: {
+    filename: string;
+    totalSize?: number;
+  };
+  receivedChunks: number;
+  totalChunks: number;
+  chunksReceived: Set<number>;
+}
+
+interface ExtendedRequest extends Request {
+  reqData?: { success: boolean; body: any };
+}
+
+interface ExtendedResponse extends Response {
+  sendREQ?: (success: boolean, body: any) => void;
+}
+
+export class Stargate {
+  private app: express.Application;
+  private args: ParsedArgs;
+  private config: Config;
+  private sslOptions: https.ServerOptions;
+  private server: https.Server;
+  private wss: WebSocket.Server;
+  private clientStates: Map<string, ClientState>;
+  private wsHeartbeatInterval: NodeJS.Timeout | null;
+  private tempCleanupInterval: NodeJS.Timeout | null;
+  private fileManager: FileManager;
+  private upload: multer.Multer;
+
+  constructor() {
     this.app = express();
     this.args = this.parseArguments();
-    this.config = {};
+    this.config = {} as Config;
+    this.clientStates = new Map();
+    this.wsHeartbeatInterval = null;
+    this.tempCleanupInterval = null;
 
     // Load SSL options
     this.sslOptions = {
@@ -26,11 +101,7 @@ class Stargate
 
     // Create HTTPS server before setupRoutes
     this.server = https.createServer(this.sslOptions, this.app);
-    this.wss = new WebSocket.Server({ noServer: true }); // Initialize WebSocket server without direct binding
-
-    // Client state tracking for enhanced reliability
-    this.clientStates = new Map();
-    this.wsHeartbeatInterval = null;
+    this.wss = new WebSocket.Server({ noServer: true });
 
     // Load configuration and set up middleware and routes
     this.loadConfig();
@@ -52,8 +123,7 @@ class Stargate
   }
 
   // Parse command-line arguments
-  parseArguments()
-  {
+  private parseArguments(): ParsedArgs {
     const parser = new ArgumentParser({
       description: 'Collaborative Register WebSocket Server',
     });
@@ -63,39 +133,30 @@ class Stargate
   }
 
   // Load configuration from config.json
-  loadConfig()
-  {
-    try
-    {
-      const configPath = path.resolve(__dirname, '../conf/config.json');
+  private loadConfig(): void {
+    try {
+      const configPath = path.resolve(__dirname, '../config/config.json');
       const configData = fs.readFileSync(configPath, 'utf8');
       this.config = JSON.parse(configData);
       Print('INFO', 'Configuration loaded successfully');
-    }
-    catch (error)
-    {
-      Print('ERROR', `Failed to load config: ${error.message}`);
+    } catch (error) {
+      Print('ERROR', `Failed to load config: ${(error as Error).message}`);
       process.exit(1);
     }
   }
 
   // Set up multer for streaming file uploads
-  setupMulter()
-  {
+  private setupMulter(): void {
     const storage = multer.diskStorage({
-      destination: (req, file, cb) =>
-      {
+      destination: (req, file, cb) => {
         cb(null, path.join(__dirname, '../storage'));
       },
-      filename: (req, file, cb) =>
-      {
-        // Create temporary filename, will be processed by FileManager after upload
+      filename: (req, file, cb) => {
         const tempName = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${file.originalname}`;
         cb(null, tempName);
       }
     });
 
-    // Use configuration-based file size limits
     const maxSizeMB = this.config.prog.file_validation?.max_size_mb || 5000;
     const maxSizeBytes = maxSizeMB * 1024 * 1024;
 
@@ -111,28 +172,23 @@ class Stargate
   }
 
   // Set up middleware including REQ header pattern
-  setupMiddleware()
-  {
+  private setupMiddleware(): void {
     // Request logging middleware
-    this.app.use((req, res, next) =>
-    {
+    this.app.use((req: ExtendedRequest, res: ExtendedResponse, next: NextFunction) => {
       Print('DEBUG', `Incoming ${req.method} request to ${req.url} from ${req.ip}`);
       Print('DEBUG', `Request headers: ${JSON.stringify(req.headers, null, 2)}`);
 
       // Log response - skip for file downloads to avoid interfering with binary data
-      if (!req.url.startsWith('/api/download/'))
-      {
+      if (!req.url.startsWith('/api/download/')) {
         const originalSend = res.send;
-        res.send = function (data)
-        {
+        res.send = function (data: any) {
           Print('DEBUG', `Response sent for ${req.method} ${req.url}: status ${res.statusCode}`);
           return originalSend.call(this, data);
         };
       }
 
       const originalRedirect = res.redirect;
-      res.redirect = function (location)
-      {
+      res.redirect = function (location: string) {
         Print('DEBUG', `Redirect sent for ${req.method} ${req.url} -> ${location}`);
         return originalRedirect.call(this, location);
       };
@@ -145,24 +201,18 @@ class Stargate
     this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
     // REQ header middleware
-    this.app.use((req, res, next) =>
-    {
-      if (req.headers.req)
-      {
-        try
-        {
-          const decoded = RequestEncoder.decode(req.headers.req);
+    this.app.use((req: ExtendedRequest, res: ExtendedResponse, next: NextFunction) => {
+      if (req.headers.req) {
+        try {
+          const decoded = RequestEncoder.decode(req.headers.req as string);
           req.reqData = decoded;
-        }
-        catch (e)
-        {
+        } catch (e) {
           req.reqData = { success: false, body: { error: 'Invalid REQ header' } };
         }
       }
 
       // Add response helper
-      res.sendREQ = (success, body) =>
-      {
+      res.sendREQ = (success: boolean, body: any) => {
         res.setHeader('REQ', RequestEncoder.encode(success, body));
         res.json({ status: success ? 'Success' : 'Error', details: 'See REQ header' });
       };
@@ -174,13 +224,12 @@ class Stargate
   }
 
   // Set up routes using configuration
-  setupRoutes()
-  {
+  private setupRoutes(): void {
     Print('DEBUG', 'Setting up routes...');
 
-    // Serve static files except index.html (which is now a template)
-    this.app.use(express.static(path.join(__dirname, '../frontend')));
-    Print('DEBUG', `Static files served from: ${path.join(__dirname, 'public')}`);
+    // Serve static Aurelia 2.0 built files
+    this.app.use(express.static(path.join(__dirname, '../dist')));
+    Print('DEBUG', `Static files served from: ${path.join(__dirname, '../dist')}`);
 
     // Serve the initial WebSocket availability check route with processed template
     const availabilityUrlRoute = this.config.prog.collab_interface_url.route;
@@ -189,47 +238,42 @@ class Stargate
 
     // Add root route redirect to main interface
     Print('DEBUG', 'Registering root route redirect to main interface');
-    this.app.get('/', (req, res) =>
-    {
+    this.app.get('/', (req: Request, res: Response) => {
       Print('INFO', `Root route accessed, redirecting to ${availabilityUrlRoute}`);
       res.redirect(availabilityUrlRoute);
     });
 
     // HTTP API endpoints for file operations (fallback for when WebSocket fails)
-    Print('DEBUG', 'Registering API endpoints: /api/upload, /api/files, /api/download/:filename');
+    Print('DEBUG', 'Registering API endpoints: /api/upload, /api/files, /api/download/:filename, /api/delete/:filename');
     this.app.post('/api/upload', this.upload.single('file'), this.handleHttpUploadMulter.bind(this));
-    this.app.post('/api/upload-legacy', this.handleHttpUpload.bind(this)); // Keep legacy base64 endpoint
+    this.app.post('/api/upload-legacy', this.handleHttpUpload.bind(this));
     this.app.get('/api/files', this.handleFileListRequest.bind(this));
+    this.app.get('/_cat/files', this.handleFileListRequest.bind(this));
     this.app.get('/api/download/:filename', this.handleFileDownload.bind(this));
+    this.app.delete('/api/delete/:filename', this.handleFileDelete.bind(this));
 
     // Handle WebSocket upgrade requests selectively based on the configured endpoint
-    this.server.on('upgrade', (req, socket, head) =>
-    {
+    this.server.on('upgrade', (req, socket, head) => {
       const wsUrlRoute = this.config.prog.websocket_server_url.route;
 
-      if (req.url === wsUrlRoute)
-      {
+      if (req.url === wsUrlRoute) {
         Print('INFO', `Received WebSocket upgrade request at ${req.url}`);
         this.handleNewWebsocketConnection(req, socket, head);
-      } else
-      {
+      } else {
         Print('WARNING', `Unexpected WebSocket upgrade request at ${req.url} - Closing socket`);
-        socket.destroy(); // Reject if the request does not match any valid WebSocket route
+        socket.destroy();
       }
     });
   }
 
   // Serve processed template with WebSocket route injection
-  handleIndexRoute(req, res)
-  {
+  private handleIndexRoute(req: Request, res: Response): void {
     Print('DEBUG', `handleIndexRoute called for ${req.url}`);
     const templatePath = path.join(__dirname, '../templates', 'index.template.html');
     Print('DEBUG', `Template path: ${templatePath}`);
 
-    fs.readFile(templatePath, 'utf8', (err, template) =>
-    {
-      if (err)
-      {
+    fs.readFile(templatePath, 'utf8', (err, template) => {
+      if (err) {
         Print('ERROR', `Failed to load template: ${err.message}`);
         Print('DEBUG', `Template path does not exist: ${templatePath}`);
         res.status(500).send('Server error');
@@ -252,20 +296,16 @@ class Stargate
   }
 
   // WebSocket upgrade and handling method for specific route
-  handleNewWebsocketConnection(req, socket, head)
-  {
-    this.wss.handleUpgrade(req, socket, head, (ws) =>
-    {
+  private handleNewWebsocketConnection(req: any, socket: any, head: any): void {
+    this.wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
       Print('INFO', 'WebSocket connection established for app logging data stream');
       this.wss.emit('connection', ws, req);
     });
   }
 
   // Initialize enhanced WebSocket handlers with reliability features
-  initializeWebSocketHandlers()
-  {
-    this.wss.on('connection', (ws, request) =>
-    {
+  private initializeWebSocketHandlers(): void {
+    this.wss.on('connection', (ws: WebSocket, request: any) => {
       const clientId = this.generateClientId();
       this.clientStates.set(clientId, {
         ws,
@@ -280,10 +320,10 @@ class Stargate
       // Send initial file list and config to new client
       this.sendInitialDataToClient(ws);
 
-      ws.on('message', (message) => this.handleWebSocketMessage(clientId, message));
+      ws.on('message', (message: WebSocket.Data) => this.handleWebSocketMessage(clientId, message));
       ws.on('pong', () => this.handleHeartbeat(clientId));
       ws.on('close', () => this.handleClientDisconnect(clientId));
-      ws.on('error', (error) => this.handleWebSocketError(clientId, error));
+      ws.on('error', (error: Error) => this.handleWebSocketError(clientId, error));
     });
 
     // Start heartbeat monitoring
@@ -294,39 +334,29 @@ class Stargate
   }
 
   // Generate unique client ID
-  generateClientId()
-  {
+  private generateClientId(): string {
     return 'client_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   }
 
   // Handle WebSocket messages with enhanced reliability
-  handleWebSocketMessage(clientId, message)
-  {
+  private handleWebSocketMessage(clientId: string, message: WebSocket.Data): void {
     Print('DEBUG', `Received WebSocket message from ${clientId}`);
     Print('TRACE', `WebSocket message content: ${message}`);
 
-    try
-    {
-      const data = JSON.parse(message);
+    try {
+      const data = JSON.parse(message.toString());
       Print('TRACE', `Parsed message data: ${JSON.stringify(data)}`);
 
       // Handle different message types
-      if (data.type === 'file_chunk' && data.req)
-      {
+      if (data.type === 'file_chunk' && data.req) {
         Print('DEBUG', `Handling file chunk message from ${clientId}`);
-        // Handle file chunk uploads with REQ header pattern
         const { success, body } = RequestEncoder.decode(data.req);
-        if (success)
-        {
+        if (success) {
           this.handleFileChunk(clientId, body);
-        }
-        else
-        {
+        } else {
           Print('ERROR', `Invalid REQ header in file chunk from ${clientId}`);
         }
-      }
-      else
-      {
+      } else {
         // Default behavior: broadcast to all clients (for text collaboration)
         Print('DEBUG', `Broadcasting text collaboration message from ${clientId} to ${this.wss.clients.size} clients`);
         Print('TRACE', `Text message content: index=${data.index}, content length=${data.content ? data.content.length : 'undefined'}`);
@@ -335,68 +365,53 @@ class Stargate
         let broadcastCount = 0;
 
         // Send to all connected WebSocket clients
-        this.wss.clients.forEach((client) =>
-        {
-          if (client.readyState === WebSocket.OPEN)
-          {
+        this.wss.clients.forEach((client: WebSocket) => {
+          if (client.readyState === WebSocket.OPEN) {
             client.send(jsonMessage);
             broadcastCount++;
             Print('TRACE', `Sent message to client (state: ${client.readyState})`);
-          }
-          else
-          {
+          } else {
             Print('TRACE', `Skipping client with state: ${client.readyState}`);
           }
         });
 
         Print('INFO', `Broadcasted message from ${clientId} to ${broadcastCount} clients`);
       }
-    }
-    catch (error)
-    {
-      Print('ERROR', `Failed to parse WebSocket message from ${clientId}: ${error.message}`);
-      this.handleWebSocketError(clientId, error);
+    } catch (error) {
+      Print('ERROR', `Failed to parse WebSocket message from ${clientId}: ${(error as Error).message}`);
+      this.handleWebSocketError(clientId, error as Error);
     }
   }
 
   // Handle heartbeat pong responses
-  handleHeartbeat(clientId)
-  {
+  private handleHeartbeat(clientId: string): void {
     const client = this.clientStates.get(clientId);
-    if (client)
-    {
+    if (client) {
       client.lastHeartbeat = Date.now();
       Print('DEBUG', `Heartbeat received from ${clientId}`);
     }
   }
 
   // Handle client disconnection
-  async handleClientDisconnect(clientId)
-  {
+  private async handleClientDisconnect(clientId: string): Promise<void> {
     Print('INFO', `Client ${clientId} disconnected from WebSocket`);
 
     const client = this.clientStates.get(clientId);
-    if (client && client.activeTransfers)
-    {
+    if (client && client.activeTransfers) {
       // Clean up any active file transfers
-      for (const [fileId, transfer] of client.activeTransfers)
-      {
+      for (const [fileId, transfer] of client.activeTransfers) {
         Print('DEBUG', `Cleaning up interrupted transfer for ${fileId}`);
 
-        if (transfer.writeStream)
-        {
+        if (transfer.writeStream) {
           transfer.writeStream.destroy();
         }
 
-        if (transfer.tempFilePath)
-        {
-          try
-          {
+        if (transfer.tempFilePath) {
+          try {
             await fs.promises.unlink(transfer.tempFilePath);
             Print('DEBUG', `Cleaned up temp file: ${transfer.tempFilePath}`);
-          } catch (error)
-          {
-            Print('DEBUG', `Failed to clean up temp file: ${error.message}`);
+          } catch (error) {
+            Print('DEBUG', `Failed to clean up temp file: ${(error as Error).message}`);
           }
         }
       }
@@ -406,17 +421,14 @@ class Stargate
   }
 
   // Handle WebSocket errors
-  handleWebSocketError(clientId, error)
-  {
+  private handleWebSocketError(clientId: string, error: Error): void {
     const client = this.clientStates.get(clientId);
-    if (client)
-    {
+    if (client) {
       client.wsFailures++;
       Print('ERROR', `WebSocket error for ${clientId} (failure #${client.wsFailures}): ${error.message}`);
 
       // If failures exceed threshold, could trigger fallback logic here
-      if (client.wsFailures >= (this.config.prog.websocket_fallback_failure_event_threshold || 3))
-      {
+      if (client.wsFailures >= (this.config.prog.websocket_fallback_failure_event_threshold || 3)) {
         Print('WARNING', `Client ${clientId} has exceeded WebSocket failure threshold`);
         client.usingHttpFallback = true;
       }
@@ -424,23 +436,17 @@ class Stargate
   }
 
   // Start heartbeat monitoring
-  startHeartbeatMonitoring()
-  {
+  private startHeartbeatMonitoring(): void {
     const heartbeatInterval = this.config.prog.heartbeat_interval_ms || 30000;
     const heartbeatTimeout = this.config.prog.heartbeat_timeout_ms || 60000;
 
-    this.wsHeartbeatInterval = setInterval(() =>
-    {
-      this.clientStates.forEach((state, clientId) =>
-      {
-        if (Date.now() - state.lastHeartbeat > heartbeatTimeout)
-        {
+    this.wsHeartbeatInterval = setInterval(() => {
+      this.clientStates.forEach((state, clientId) => {
+        if (Date.now() - state.lastHeartbeat > heartbeatTimeout) {
           Print('WARNING', `Client ${clientId} heartbeat timeout, terminating connection`);
           state.ws.terminate();
           this.handleClientDisconnect(clientId);
-        }
-        else if (state.ws.readyState === WebSocket.OPEN)
-        {
+        } else if (state.ws.readyState === WebSocket.OPEN) {
           state.ws.ping();
         }
       });
@@ -450,42 +456,33 @@ class Stargate
   }
 
   // Start temp file cleanup service
-  startTempFileCleanup()
-  {
+  private startTempFileCleanup(): void {
     const cleanupInterval = this.config.prog.memory_management?.cleanup_interval_ms || 300000; // 5 minutes
     const maxFileAge = this.config.prog.memory_management?.max_temp_file_age_ms || 3600000; // 1 hour
 
-    this.tempCleanupInterval = setInterval(async () =>
-    {
-      try
-      {
+    this.tempCleanupInterval = setInterval(async () => {
+      try {
         const storageDir = path.join(__dirname, '../storage');
         const files = await fs.promises.readdir(storageDir);
 
-        for (const file of files)
-        {
-          if (file.startsWith('temp_'))
-          {
+        for (const file of files) {
+          if (file.startsWith('temp_')) {
             const filePath = path.join(storageDir, file);
             const stats = await fs.promises.stat(filePath);
             const fileAge = Date.now() - stats.mtime.getTime();
 
-            if (fileAge > maxFileAge)
-            {
-              try
-              {
+            if (fileAge > maxFileAge) {
+              try {
                 await fs.promises.unlink(filePath);
                 Print('DEBUG', `Cleaned up old temp file: ${file} (age: ${Math.round(fileAge / 60000)}min)`);
-              } catch (error)
-              {
-                Print('DEBUG', `Failed to clean temp file ${file}: ${error.message}`);
+              } catch (error) {
+                Print('DEBUG', `Failed to clean temp file ${file}: ${(error as Error).message}`);
               }
             }
           }
         }
-      } catch (error)
-      {
-        Print('DEBUG', `Temp file cleanup error: ${error.message}`);
+      } catch (error) {
+        Print('DEBUG', `Temp file cleanup error: ${(error as Error).message}`);
       }
     }, cleanupInterval);
 
@@ -493,14 +490,12 @@ class Stargate
   }
 
   // Handle file chunk uploads via WebSocket with streaming write
-  async handleFileChunk(clientId, chunkData)
-  {
+  private async handleFileChunk(clientId: string, chunkData: any): Promise<void> {
     Print('DEBUG', `handleFileChunk called for client ${clientId}`);
     Print('DEBUG', `Chunk data keys: ${Object.keys(chunkData).join(', ')}`);
 
     const client = this.clientStates.get(clientId);
-    if (!client)
-    {
+    if (!client) {
       Print('ERROR', `Client ${clientId} not found in clientStates`);
       return;
     }
@@ -508,8 +503,7 @@ class Stargate
     const { fileId, chunkIndex, totalChunks, data, metadata } = chunkData;
     Print('DEBUG', `File upload: ${metadata.filename}, chunk ${chunkIndex + 1}/${totalChunks}, data length: ${data ? data.length : 'undefined'}`);
 
-    if (!client.activeTransfers.has(fileId))
-    {
+    if (!client.activeTransfers.has(fileId)) {
       Print('DEBUG', `Starting new streaming file transfer for ${fileId}`);
 
       // Create a temporary file for streaming write
@@ -523,29 +517,25 @@ class Stargate
         metadata,
         receivedChunks: 0,
         totalChunks,
-        chunksReceived: new Set() // Track which chunks we've received
+        chunksReceived: new Set()
       });
     }
 
-    const transfer = client.activeTransfers.get(fileId);
+    const transfer = client.activeTransfers.get(fileId)!;
 
     // Check for duplicate chunks
-    if (transfer.chunksReceived.has(chunkIndex))
-    {
+    if (transfer.chunksReceived.has(chunkIndex)) {
       Print('DEBUG', `Duplicate chunk ${chunkIndex} ignored for ${metadata.filename}`);
       return;
     }
 
-    try
-    {
+    try {
       // Decode and write chunk directly to stream - no memory buffering
       const chunkBuffer = Buffer.from(data, 'base64');
 
       // Write chunk to stream
-      await new Promise((resolve, reject) =>
-      {
-        transfer.writeStream.write(chunkBuffer, (error) =>
-        {
+      await new Promise<void>((resolve, reject) => {
+        transfer.writeStream.write(chunkBuffer, (error?: Error | null) => {
           if (error) reject(error);
           else resolve();
         });
@@ -555,18 +545,15 @@ class Stargate
       transfer.receivedChunks++;
 
       Print('DEBUG', `Chunk ${chunkIndex} streamed to disk, total received: ${transfer.receivedChunks}/${totalChunks}`);
-    } catch (error)
-    {
-      Print('ERROR', `Failed to stream chunk ${chunkIndex}: ${error.message}`);
+    } catch (error) {
+      Print('ERROR', `Failed to stream chunk ${chunkIndex}: ${(error as Error).message}`);
 
       // Clean up on error
       transfer.writeStream.destroy();
-      try
-      {
+      try {
         await fs.promises.unlink(transfer.tempFilePath);
-      } catch (cleanupError)
-      {
-        Print('DEBUG', `Temp file cleanup failed: ${cleanupError.message}`);
+      } catch (cleanupError) {
+        Print('DEBUG', `Temp file cleanup failed: ${(cleanupError as Error).message}`);
       }
       client.activeTransfers.delete(fileId);
       return;
@@ -574,18 +561,15 @@ class Stargate
 
     Print('INFO', `Received chunk ${chunkIndex + 1}/${totalChunks} for file ${metadata.filename} from ${clientId}`);
 
-    if (transfer.receivedChunks === totalChunks)
-    {
+    if (transfer.receivedChunks === totalChunks) {
       Print('DEBUG', `All chunks received for ${metadata.filename}, finalizing file`);
 
       // Close the write stream
-      await new Promise((resolve) =>
-      {
+      await new Promise<void>((resolve) => {
         transfer.writeStream.end(resolve);
       });
 
-      try
-      {
+      try {
         // Use streaming file upload method
         const fileInfo = await this.fileManager.handleFileUploadStreaming(transfer.tempFilePath, {
           filename: metadata.filename,
@@ -600,19 +584,15 @@ class Stargate
         client.activeTransfers.delete(fileId);
 
         Print('INFO', `Streaming file upload completed: ${metadata.filename}`);
-      }
-      catch (error)
-      {
-        Print('ERROR', `Streaming file upload failed: ${error.message}`);
-        Print('DEBUG', `Error stack: ${error.stack}`);
+      } catch (error) {
+        Print('ERROR', `Streaming file upload failed: ${(error as Error).message}`);
+        Print('DEBUG', `Error stack: ${(error as Error).stack}`);
 
         // Clean up temp file on error
-        try
-        {
+        try {
           await fs.promises.unlink(transfer.tempFilePath);
-        } catch (cleanupError)
-        {
-          Print('DEBUG', `Temp file cleanup failed: ${cleanupError.message}`);
+        } catch (cleanupError) {
+          Print('DEBUG', `Temp file cleanup failed: ${(cleanupError as Error).message}`);
         }
         client.activeTransfers.delete(fileId);
       }
@@ -620,18 +600,15 @@ class Stargate
   }
 
   // Broadcast file list updates to all connected clients
-  broadcastFileListUpdate()
-  {
+  private broadcastFileListUpdate(): void {
     const fileList = this.fileManager.getFileList();
     const message = JSON.stringify({
       type: 'file_list_update',
       files: fileList
     });
 
-    this.wss.clients.forEach(client =>
-    {
-      if (client.readyState === WebSocket.OPEN)
-      {
+    this.wss.clients.forEach((client: WebSocket) => {
+      if (client.readyState === WebSocket.OPEN) {
         client.send(message);
       }
     });
@@ -640,10 +617,8 @@ class Stargate
   }
 
   // Send initial data to a newly connected client
-  sendInitialDataToClient(ws)
-  {
-    try
-    {
+  private sendInitialDataToClient(ws: WebSocket): void {
+    try {
       // Send current file list
       const fileList = this.fileManager.getFileList();
       const fileListMessage = JSON.stringify({
@@ -662,26 +637,21 @@ class Stargate
       ws.send(configMessage);
 
       Print('INFO', `Sent initial data to new client: ${fileList.length} files`);
-    }
-    catch (error)
-    {
-      Print('ERROR', `Failed to send initial data to client: ${error.message}`);
+    } catch (error) {
+      Print('ERROR', `Failed to send initial data to client: ${(error as Error).message}`);
     }
   }
 
   // New streaming HTTP upload endpoint using multer
-  async handleHttpUploadMulter(req, res)
-  {
-    try
-    {
-      if (!req.file)
-      {
-        return res.status(400).json({ error: 'No file provided' });
+  private async handleHttpUploadMulter(req: Request, res: Response): Promise<void> {
+    try {
+      if (!req.file) {
+        res.status(400).json({ error: 'No file provided' });
+        return;
       }
 
       Print('DEBUG', `Multer file upload: ${req.file.originalname}, temp file: ${req.file.filename}`);
 
-      // Process file without loading into memory - use streaming approach
       const tempFilePath = req.file.path;
 
       const fileInfo = await this.fileManager.handleFileUploadStreaming(tempFilePath, {
@@ -690,44 +660,40 @@ class Stargate
         size: req.file.size
       });
 
-      // Temp file is cleaned up by FileManager after streaming
-
       this.broadcastFileListUpdate();
       res.json({ success: true, fileInfo });
 
       Print('INFO', `Streaming HTTP file upload completed: ${req.file.originalname}`);
-    }
-    catch (error)
-    {
-      Print('ERROR', `Streaming HTTP file upload failed: ${error.message}`);
+    } catch (error) {
+      Print('ERROR', `Streaming HTTP file upload failed: ${(error as Error).message}`);
 
-      // Clean up temp file on error
-      if (req.file && req.file.path)
-      {
-        try { await fs.promises.unlink(req.file.path); } catch (e) { }
+      if (req.file && req.file.path) {
+        try { 
+          await fs.promises.unlink(req.file.path); 
+        } catch (e) { 
+          // Ignore cleanup errors
+        }
       }
 
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: (error as Error).message });
     }
   }
 
   // Legacy HTTP fallback endpoint for file upload (base64)
-  async handleHttpUpload(req, res)
-  {
-    if (!req.reqData || !req.reqData.success)
-    {
-      return res.sendREQ(false, { error: 'Invalid request - REQ header required' });
+  private async handleHttpUpload(req: ExtendedRequest, res: ExtendedResponse): Promise<void> {
+    if (!req.reqData || !req.reqData.success) {
+      res.sendREQ!(false, { error: 'Invalid request - REQ header required' });
+      return;
     }
 
     const { filename, data } = req.reqData.body;
 
-    if (!filename || !data)
-    {
-      return res.sendREQ(false, { error: 'Missing filename or data' });
+    if (!filename || !data) {
+      res.sendREQ!(false, { error: 'Missing filename or data' });
+      return;
     }
 
-    try
-    {
+    try {
       const fileBuffer = Buffer.from(data, 'base64');
 
       const fileInfo = await this.fileManager.handleFileUpload(fileBuffer, {
@@ -736,181 +702,93 @@ class Stargate
       });
 
       this.broadcastFileListUpdate();
-      res.sendREQ(true, { fileInfo });
+      res.sendREQ!(true, { fileInfo });
 
       Print('INFO', `Legacy HTTP file upload completed: ${filename}`);
-    }
-    catch (error)
-    {
-      Print('ERROR', `Legacy HTTP file upload failed: ${error.message}`);
-      res.sendREQ(false, { error: error.message });
+    } catch (error) {
+      Print('ERROR', `Legacy HTTP file upload failed: ${(error as Error).message}`);
+      res.sendREQ!(false, { error: (error as Error).message });
     }
   }
 
   // HTTP endpoint for file list
-  handleFileListRequest(req, res)
-  {
-    try
-    {
+  private handleFileListRequest(req: ExtendedRequest, res: ExtendedResponse): void {
+    try {
       const fileList = this.fileManager.getFileList();
-      res.sendREQ(true, { files: fileList });
-    }
-    catch (error)
-    {
-      Print('ERROR', `File list request failed: ${error.message}`);
-      res.sendREQ(false, { error: error.message });
+      res.sendREQ!(true, { files: fileList });
+    } catch (error) {
+      Print('ERROR', `File list request failed: ${(error as Error).message}`);
+      res.sendREQ!(false, { error: (error as Error).message });
     }
   }
 
   // HTTP endpoint for file download
-  async handleFileDownload(req, res)
-  {
+  private async handleFileDownload(req: Request, res: Response): Promise<void> {
     const { filename } = req.params;
 
-    if (!filename)
-    {
-      return res.status(400).json({ error: 'Filename required' });
+    if (!filename) {
+      res.status(400).json({ error: 'Filename required' });
+      return;
     }
 
-    try
-    {
-      if (!this.fileManager.fileExists(filename))
-      {
-        return res.status(404).json({ error: 'File not found' });
+    try {
+      if (!this.fileManager.fileExists(filename)) {
+        res.status(404).json({ error: 'File not found' });
+        return;
       }
 
       const fileData = await this.fileManager.getFileData(filename);
-      const filePath = path.join(this.fileManager.storageDir, filename);
+      const filePath = path.join(this.fileManager['storageDir'], filename);
 
       // Get file extension and set appropriate MIME type
       const ext = path.extname(filename).toLowerCase();
       let contentType = 'application/octet-stream';
 
       // Handle .tar.gz special case
-      if (filename.toLowerCase().endsWith('.tar.gz'))
-      {
+      if (filename.toLowerCase().endsWith('.tar.gz')) {
         contentType = 'application/gzip';
-      } else
-      {
-        switch (ext)
-        {
-          // Images
-          case '.png':
-            contentType = 'image/png';
-            break;
-          case '.jpg':
-          case '.jpeg':
-            contentType = 'image/jpeg';
-            break;
-          case '.gif':
-            contentType = 'image/gif';
-            break;
-          case '.heic':
-            contentType = 'image/heic';
-            break;
-          case '.webp':
-            contentType = 'image/webp';
-            break;
-          case '.jp2':
-          case '.jpx':
-          case '.j2k':
-            contentType = 'image/jp2';
-            break;
-          case '.tiff':
-          case '.tif':
-            contentType = 'image/tiff';
-            break;
-          case '.psd':
-            contentType = 'image/vnd.adobe.photoshop';
-            break;
+      } else {
+        const mimeTypes: Record<string, string> = {
+          '.png': 'image/png',
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.gif': 'image/gif',
+          '.heic': 'image/heic',
+          '.webp': 'image/webp',
+          '.jp2': 'image/jp2',
+          '.jpx': 'image/jp2',
+          '.j2k': 'image/jp2',
+          '.tiff': 'image/tiff',
+          '.tif': 'image/tiff',
+          '.psd': 'image/vnd.adobe.photoshop',
+          '.pdf': 'application/pdf',
+          '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          '.py': 'text/x-python',
+          '.js': 'application/javascript',
+          '.rs': 'text/x-rust',
+          '.php': 'application/x-httpd-php',
+          '.html': 'text/html',
+          '.css': 'text/css',
+          '.sh': 'application/x-sh',
+          '.txt': 'text/plain',
+          '.json': 'application/json',
+          '.safetensors': 'application/octet-stream',
+          '.pt': 'application/octet-stream',
+          '.pth': 'application/octet-stream',
+          '.mp4': 'video/mp4',
+          '.mov': 'video/quicktime',
+          '.mkv': 'video/x-matroska',
+          '.mp3': 'audio/mpeg',
+          '.aac': 'audio/aac',
+          '.zip': 'application/zip',
+          '.dmg': 'application/x-apple-diskimage',
+          '.iso': 'application/x-iso9660-image',
+          '.pkg': 'application/x-newton-compatible-pkg',
+          '.bin': 'application/octet-stream'
+        };
 
-          // Documents
-          case '.pdf':
-            contentType = 'application/pdf';
-            break;
-          case '.pptx':
-            contentType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-            break;
-          case '.docx':
-            contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-            break;
-
-          // Code files
-          case '.py':
-            contentType = 'text/x-python';
-            break;
-          case '.js':
-            contentType = 'application/javascript';
-            break;
-          case '.rs':
-            contentType = 'text/x-rust';
-            break;
-          case '.php':
-            contentType = 'application/x-httpd-php';
-            break;
-          case '.html':
-            contentType = 'text/html';
-            break;
-          case '.css':
-            contentType = 'text/css';
-            break;
-          case '.sh':
-            contentType = 'application/x-sh';
-            break;
-
-          // Data/Config
-          case '.txt':
-            contentType = 'text/plain';
-            break;
-          case '.json':
-            contentType = 'application/json';
-            break;
-
-          // ML/AI files
-          case '.safetensors':
-            contentType = 'application/octet-stream';
-            break;
-          case '.pt':
-          case '.pth':
-            contentType = 'application/octet-stream';
-            break;
-
-          // Video
-          case '.mp4':
-            contentType = 'video/mp4';
-            break;
-          case '.mov':
-            contentType = 'video/quicktime';
-            break;
-          case '.mkv':
-            contentType = 'video/x-matroska';
-            break;
-
-          // Audio
-          case '.mp3':
-            contentType = 'audio/mpeg';
-            break;
-          case '.aac':
-            contentType = 'audio/aac';
-            break;
-
-          // Archives/Disk Images
-          case '.zip':
-            contentType = 'application/zip';
-            break;
-          case '.dmg':
-            contentType = 'application/x-apple-diskimage';
-            break;
-          case '.iso':
-            contentType = 'application/x-iso9660-image';
-            break;
-          case '.pkg':
-            contentType = 'application/x-newton-compatible-pkg';
-            break;
-          case '.bin':
-            contentType = 'application/octet-stream';
-            break;
-        }
+        contentType = mimeTypes[ext] || contentType;
       }
 
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -919,17 +797,34 @@ class Stargate
       res.send(fileData);
 
       Print('INFO', `File download completed: ${filename} (${contentType})`);
+    } catch (error) {
+      Print('ERROR', `File download failed: ${(error as Error).message}`);
+      res.status(500).json({ error: (error as Error).message });
     }
-    catch (error)
-    {
-      Print('ERROR', `File download failed: ${error.message}`);
-      res.status(500).json({ error: error.message });
+  }
+
+  // HTTP endpoint for file deletion
+  private async handleFileDelete(req: ExtendedRequest, res: ExtendedResponse): Promise<void> {
+    const { filename } = req.params;
+    
+    try {
+      const deleted = await this.fileManager.deleteFile(filename);
+      if (deleted) {
+        this.broadcastFileListUpdate();
+        res.sendREQ!(true, { message: 'File deleted successfully' });
+      } else {
+        res.status(404);
+        res.sendREQ!(false, { error: 'File not found' });
+      }
+    } catch (error) {
+      Print('ERROR', `File deletion failed: ${(error as Error).message}`);
+      res.status(500);
+      res.sendREQ!(false, { error: (error as Error).message });
     }
   }
 
   // Start the HTTPS and WebSocket server
-  start()
-  {
+  start(): void {
     Print('DEBUG', `Starting server on ${this.args.hostname}:${this.args.port}`);
     Print('DEBUG', `Available routes:`);
     Print('DEBUG', `  GET / -> redirect to ${this.config.prog.collab_interface_url.route}`);
@@ -939,15 +834,10 @@ class Stargate
     Print('DEBUG', `  GET /api/download/:filename -> file download`);
     Print('DEBUG', `  WebSocket upgrade at ${this.config.prog.websocket_server_url.route}`);
 
-    this.server.listen(this.args.port, this.args.hostname, () =>
-    {
+    this.server.listen(this.args.port, this.args.hostname, () => {
       Print('INFO', `Server running at https://${this.args.hostname}:${this.args.port}`);
       Print('INFO', `Main interface available at: https://${this.args.hostname}:${this.args.port}${this.config.prog.collab_interface_url.route}`);
       Print('INFO', `Root redirect available at: https://${this.args.hostname}:${this.args.port}/`);
     });
   }
 }
-
-// Export Stargate for testing or external usage
-module.exports = Stargate;
-

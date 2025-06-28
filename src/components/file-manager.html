@@ -1,0 +1,65 @@
+<div class="files-register">
+  <div class="register-header">
+    <h3>Files</h3>
+    <input type="text" 
+           value.bind="searchFilter & debounce:300" 
+           placeholder="Search files..." 
+           class="file-search">
+    <button click.trigger="downloadAll()" class="sync-button">Download All</button>
+  </div>
+  
+  <div class="drop-zone" 
+       ref="dropZone"
+       dragover.trigger="handleDragOver($event)"
+       dragleave.trigger="handleDragLeave($event)"
+       drop.trigger="handleDrop($event)"
+       click.trigger="fileInput.click()">
+    <p>Drop files here or click to upload</p>
+    <input type="file" 
+           ref="fileInput" 
+           multiple 
+           change.trigger="handleFileSelect($event)"
+           style="display: none;">
+  </div>
+  
+  <div class="file-list" if.bind="filteredFiles.length > 0">
+    <table id="fileTable">
+      <thead>
+        <tr>
+          <th click.trigger="sort('displayName')" class="sortable">
+            Filename ↕
+          </th>
+          <th click.trigger="sort('size')" class="sortable">
+            Size ↕
+          </th>
+          <th click.trigger="sort('timestamp')" class="sortable">
+            Timestamp ↕
+          </th>
+          <th click.trigger="sort('uploaderHostname')" class="sortable">
+            Uploader ↕
+          </th>
+          <th click.trigger="sort('hash')" class="sortable">
+            Hash ↕
+          </th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr repeat.for="file of filteredFiles">
+          <td>${file.displayName}</td>
+          <td>${file.size | fileSize}</td>
+          <td>${file.timestamp | dateFormat}</td>
+          <td>${file.uploaderHostname}</td>
+          <td class="hash-cell">${file.hash}</td>
+          <td>
+            <button click.trigger="downloadFile(file)" class="download-btn">Download</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <div if.bind="!filteredFiles.length" style="padding: 20px; text-align: center; color: #999;">
+    No files uploaded yet
+  </div>
+</div>

@@ -1,0 +1,20 @@
+<require from="./styles.css"></require>
+
+<div class="stargate-workspace">
+  <mode-indicator></mode-indicator>
+  
+  <div class="line blue-line"></div>
+  
+  <h1>Collaboration Registers</h1>
+  <div class="line gray-line"></div>
+  
+  <div class="register-container">
+    <text-register 
+      repeat.for="register of registers" 
+      register-id.bind="register.id"
+      content.bind="register.content">
+    </text-register>
+    
+    <file-manager></file-manager>
+  </div>
+</div>
