@@ -4,12 +4,15 @@
     "description": "A Node.js server for collaborative text editing with resizable text areas.",
     "main": "server.js",
     "scripts": {
-        "start": "node server.js",
-        "test": "jest",
-        "test:watch": "jest --watch"
+        "start": "bun server.js",
+        "test": "bun test",
+        "test:watch": "bun test --watch"
+    },
+    "engines": {
+        "bun": ">=1.0.0"
     },
     "author": "Joe Hacobian",
-    "license": "MIT",
+    "license": "AGPL-3.0",
     "dependencies": {
         "argparse": "^2.0.1",
         "colors": "^1.4.0",
