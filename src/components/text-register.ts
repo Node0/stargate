@@ -1,43 +1,46 @@
 import { BrowserPrint } from '../browser-logger';
-import { WebSocketService } from '../services/websocket.service';
-import { resolve } from 'aurelia';
+import { CollaborationService } from '../services/collaboration.service';
+import { inject } from 'aurelia';
 
+@inject(CollaborationService)
 export class TextRegister {
   static readonly bindables = ['registerId', 'content'];
   registerId: number = 1;
   content: string = '';
   
-  private webSocketService: WebSocketService = resolve(WebSocketService);
-  private subscription: (() => void) | null = null;
-  private isUpdatingFromWebSocket = false;
+  private unsubscribe?: () => void;
+  private isUpdatingFromRemote: boolean = false;
+  
+  // Use constructor injection instead of resolve()
+  constructor(private collaboration: CollaborationService) {}
   
   attached(): void {
     BrowserPrint('INFO', `Text register ${this.registerId} attached`);
     
-    // Subscribe to incoming text changes from other clients
-    this.subscription = this.webSocketService.onTextChange((message) => {
-      if (message.registerId === this.registerId) {
-        this.isUpdatingFromWebSocket = true;
-        this.content = message.content;
-        this.isUpdatingFromWebSocket = false;
-        BrowserPrint('DEBUG', `Register ${this.registerId} updated from WebSocket: ${message.content.length} chars`);
+    // Service is already injected and available
+    this.unsubscribe = this.collaboration.subscribeToRegister(
+      this.registerId,
+      (remoteContent) => {
+        if (remoteContent !== this.content) {
+          BrowserPrint('DEBUG', `Register ${this.registerId} updated from remote: ${remoteContent.length} chars`);
+          this.isUpdatingFromRemote = true;
+          this.content = remoteContent;
+          this.isUpdatingFromRemote = false;
+        }
       }
-    });
+    );
   }
   
   detached(): void {
     BrowserPrint('INFO', `Text register ${this.registerId} detached`);
-    if (this.subscription) {
-      this.subscription();
-      this.subscription = null;
-    }
+    this.unsubscribe?.();
   }
   
   contentChanged(newValue: string, oldValue: string): void {
-    // Don't send if this is the initial binding or if we're updating from WebSocket
-    if (oldValue === undefined || this.isUpdatingFromWebSocket) return;
+    // Skip initial binding and remote updates
+    if (oldValue === undefined || this.isUpdatingFromRemote) return;
     
-    BrowserPrint('DEBUG', `Register ${this.registerId} content changed: ${newValue.length} chars`);
-    this.webSocketService.sendTextChange(this.registerId, newValue);
+    BrowserPrint('DEBUG', `Register ${this.registerId} local change: ${newValue.length} chars`);
+    this.collaboration.syncRegister(this.registerId, newValue);
   }
 }

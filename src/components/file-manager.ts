@@ -1,4 +1,6 @@
 import { BrowserPrint } from '../browser-logger';
+import { CollaborationService } from '../services/collaboration.service';
+import { inject } from 'aurelia';
 
 interface FileInfo {
   hash: string;
@@ -9,20 +11,48 @@ interface FileInfo {
   storedName?: string;
 }
 
+@inject(CollaborationService)
 export class FileManager {
   files: FileInfo[] = [];
   filteredFiles: FileInfo[] = [];
   searchFilter: string = '';
   sortColumn: string = 'timestamp';
   sortAscending: boolean = false;
+  isConnected: boolean = false;
   
   // Refs
   dropZone: HTMLElement;
   fileInput: HTMLInputElement;
   
+  private fileUpdateUnsubscribe?: () => void;
+  private connectionUnsubscribe?: () => void;
+  
+  // Use constructor injection
+  constructor(private collaboration: CollaborationService) {}
+  
   attached(): void {
     BrowserPrint('INFO', 'File manager attached');
+    
+    // Service is already injected and available
+    this.fileUpdateUnsubscribe = this.collaboration.subscribeToFileUpdates((files) => {
+      BrowserPrint('INFO', `Received file list update: ${files.length} files`);
+      this.files = files;
+      this.filterFiles();
+    });
+    
+    // Subscribe to connection status
+    this.connectionUnsubscribe = this.collaboration.subscribeToConnection((connected) => {
+      this.isConnected = connected;
+    });
+    
+    // Initial load
     this.loadFiles();
+  }
+  
+  detached(): void {
+    BrowserPrint('INFO', 'File manager detached');
+    this.fileUpdateUnsubscribe?.();
+    this.connectionUnsubscribe?.();
   }
   
   searchFilterChanged(): void {

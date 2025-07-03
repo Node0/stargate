@@ -6,7 +6,7 @@
     "start": "npm run build && npm run server",
     "server": "bun run server/server.ts --hostname=0.0.0.0 --port=5900",
     "build": "parcel build src/index.html --dist-dir dist",
-    "dev": "parcel serve src/index.html --https --cert ./server.cert --key ./server.key --port 5901",
+    "dev": "parcel serve src/index.html --https --cert ./server.cert --key ./server.key --port 5900",
     "clean": "rm -rf dist .parcel-cache",
     "test": "vitest"
   },

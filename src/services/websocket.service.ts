@@ -1,6 +1,11 @@
-import { IEventAggregator, EventAggregator, resolve } from 'aurelia';
-import { IWebSocketService } from './contracts';
 import { BrowserPrint } from '../browser-logger';
+import { singleton } from 'aurelia';
+
+export interface WebSocketConfig {
+  url?: string;
+  reconnectDelay?: number;
+  maxReconnectAttempts?: number;
+}
 
 export interface TextChangeMessage {
   type: 'text_change';
@@ -16,113 +21,180 @@ export interface FileListUpdateMessage {
 
 export type WebSocketMessage = TextChangeMessage | FileListUpdateMessage;
 
-export class WebSocketService implements IWebSocketService {
+@singleton
+export class WebSocketService {
   private ws: WebSocket | null = null;
   private reconnectTimer: number | null = null;
+  private reconnectAttempts: number = 0;
+  private messageHandlers: Array<(data: any) => void> = [];
+  private connectionHandlers: Array<(connected: boolean) => void> = [];
+  private config: Required<WebSocketConfig>;
   
-  isConnected = false;
-  private readonly wsRoute = '/_data_stream/app_logging_data';
-  
-  constructor(
-    private ea: IEventAggregator = resolve(IEventAggregator)
-  ) {
-    this.connect();
+  constructor(config?: WebSocketConfig) {
+    this.config = {
+      url: config?.url || `wss://${location.host}/_data_stream/app_logging_data`,
+      reconnectDelay: config?.reconnectDelay || 5000,
+      maxReconnectAttempts: config?.maxReconnectAttempts || 10
+    };
   }
   
-  private connect(): void {
+  connect(): void {
+    BrowserPrint('INFO', `Connecting to WebSocket: ${this.config.url}`);
+    
     try {
-      // Connect to WebSocket on the same host (single port architecture)
-      this.ws = new WebSocket(`wss://${location.host}${this.wsRoute}`);
+      this.ws = new WebSocket(this.config.url);
       
       this.ws.onopen = () => {
-        this.isConnected = true;
         BrowserPrint('SUCCESS', 'WebSocket connected');
-        this.ea.publish('ws:connected');
+        this.reconnectAttempts = 0;
         
         if (this.reconnectTimer) {
           clearTimeout(this.reconnectTimer);
           this.reconnectTimer = null;
         }
+        
+        this.notifyConnectionHandlers(true);
       };
       
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          this.ea.publish('ws:message', data);
-        } catch (error) {
-          console.error('Failed to parse WebSocket message:', error);
+          BrowserPrint('TRACE', `WebSocket message received: ${data.type || 'unknown'}`);
+          this.messageHandlers.forEach(handler => handler(data));
+        } catch (e) {
+          BrowserPrint('ERROR', `Failed to parse WebSocket message: ${e.message}`);
         }
       };
       
-      this.ws.onclose = () => {
-        this.isConnected = false;
-        console.log('WebSocket disconnected, attempting to reconnect...');
-        this.ea.publish('ws:disconnected');
-        
-        // Attempt to reconnect after 3 seconds
-        this.reconnectTimer = window.setTimeout(() => {
-          this.connect();
-        }, 3000);
+      this.ws.onclose = (event) => {
+        BrowserPrint('WARNING', `WebSocket disconnected: ${event.code} - ${event.reason}`);
+        this.notifyConnectionHandlers(false);
+        this.scheduleReconnect();
       };
       
       this.ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        this.ea.publish('ws:error', error);
+        BrowserPrint('ERROR', `WebSocket error: ${error}`);
       };
-      
     } catch (error) {
-      console.error('Failed to create WebSocket connection:', error);
-      // Retry connection after 5 seconds
+      BrowserPrint('ERROR', `Failed to create WebSocket: ${error.message}`);
+      this.scheduleReconnect();
+    }
+  }
+  
+  private scheduleReconnect(): void {
+    if (this.reconnectAttempts >= this.config.maxReconnectAttempts) {
+      BrowserPrint('ERROR', 'Max reconnection attempts reached');
+      return;
+    }
+    
+    if (!this.reconnectTimer) {
+      this.reconnectAttempts++;
+      const delay = this.config.reconnectDelay * Math.min(this.reconnectAttempts, 3);
+      
+      BrowserPrint('INFO', `Scheduling reconnection attempt ${this.reconnectAttempts} in ${delay}ms`);
+      
       this.reconnectTimer = window.setTimeout(() => {
+        this.reconnectTimer = null;
         this.connect();
-      }, 5000);
+      }, delay);
     }
   }
   
-  send<T>(data: T): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(data));
+  send(data: any): boolean {
+    if (this.isConnected()) {
+      try {
+        this.ws!.send(JSON.stringify(data));
+        BrowserPrint('TRACE', `WebSocket message sent: ${data.type || 'unknown'}`);
+        return true;
+      } catch (error) {
+        BrowserPrint('ERROR', `Failed to send WebSocket message: ${error.message}`);
+        return false;
+      }
     } else {
-      console.warn('WebSocket not connected, cannot send message');
+      BrowserPrint('WARNING', 'WebSocket not connected, message queued');
+      return false;
     }
   }
   
-  onMessage<T>(callback: (data: T) => void): () => void {
-    const handler = (data: T) => {
-      callback(data);
-    };
-    const subscription = this.ea.subscribe('ws:message', handler);
-    return () => subscription.dispose();
-  }
-  
-  sendTextChange(registerId: number, content: string): void {
-    const message: TextChangeMessage = {
-      type: 'text_change',
-      registerId,
-      content,
-      timestamp: Date.now()
-    };
-    this.send(message);
-    BrowserPrint('DEBUG', `Text change sent for register ${registerId}: ${content.length} chars`);
-  }
-  
-  onTextChange(callback: (message: TextChangeMessage) => void): () => void {
-    const handler = (data: WebSocketMessage) => {
-      if (data.type === 'text_change') {
-        callback(data);
+  onMessage(handler: (data: any) => void): () => void {
+    this.messageHandlers.push(handler);
+    return () => {
+      const index = this.messageHandlers.indexOf(handler);
+      if (index > -1) {
+        this.messageHandlers.splice(index, 1);
       }
     };
-    const subscription = this.ea.subscribe('ws:message', handler);
-    return () => subscription.dispose();
   }
   
-  dispose(): void {
+  onConnectionChange(handler: (connected: boolean) => void): () => void {
+    this.connectionHandlers.push(handler);
+    // Immediately notify of current state
+    handler(this.isConnected());
+    
+    return () => {
+      const index = this.connectionHandlers.indexOf(handler);
+      if (index > -1) {
+        this.connectionHandlers.splice(index, 1);
+      }
+    };
+  }
+  
+  private notifyConnectionHandlers(connected: boolean): void {
+    this.connectionHandlers.forEach(handler => handler(connected));
+  }
+  
+  isConnected(): boolean {
+    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+  
+  disconnect(): void {
+    BrowserPrint('INFO', 'Disconnecting WebSocket');
+    
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    this.ws?.close();
-    this.ws = null;
-    this.isConnected = false;
+    
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+    
+    this.messageHandlers = [];
+    this.connectionHandlers = [];
+  }
+  
+  // File chunk support for large data transfers
+  sendFileChunk(fileId: string, chunkData: any): boolean {
+    return this.send({
+      type: 'file_chunk',
+      req: btoa(JSON.stringify({ success: true, body: chunkData }))
+    });
+  }
+  
+  // Echo test for connection validation
+  async ping(): Promise<boolean> {
+    return new Promise((resolve) => {
+      if (!this.isConnected()) {
+        resolve(false);
+        return;
+      }
+      
+      const timeout = setTimeout(() => {
+        BrowserPrint('WARNING', 'Ping timeout');
+        resolve(false);
+      }, 5000);
+      
+      const unsubscribe = this.onMessage((data: any) => {
+        if (data.type === 'pong') {
+          clearTimeout(timeout);
+          unsubscribe();
+          BrowserPrint('DEBUG', 'Pong received');
+          resolve(true);
+        }
+      });
+      
+      this.send({ type: 'ping', timestamp: Date.now() });
+    });
   }
 }

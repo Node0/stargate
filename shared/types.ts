@@ -49,10 +49,15 @@ export interface REQPayload<T = any> {
   body: T;
 }
 
-// Persistence types (for future timeline feature)
+export interface RegisterState {
+  id: number;
+  content: string;
+}
+
+// Timeline/Persistence types (for future implementation)
 export interface TimelineEvent {
   id?: number;
-  event_type: 'text_change' | 'file_upload' | 'file_delete';
+  event_type: 'text_change' | 'file_upload' | 'file_delete' | 'register_created';
   entity_id: string;
   payload: any;
   timestamp: number;
@@ -65,13 +70,23 @@ export interface TimeRange {
   end: number;
 }
 
-export interface RegisterState {
-  id: number;
-  content: string;
-}
-
-export interface SystemState {
+export interface SystemSnapshot {
   registers: RegisterState[];
   files: FileInfo[];
   timestamp: number;
+  version: string;
+}
+
+// Interface for future timeline store
+export interface TimelineStore {
+  recordEvent(event: TimelineEvent): Promise<void>;
+  getSnapshot(timestamp: number): Promise<SystemSnapshot>;
+  getEvents(range: TimeRange): Promise<TimelineEvent[]>;
+  streamEvents(from: number, to: number): AsyncIterable<TimelineEvent>;
+}
+
+// WebSocket message types for timeline
+export interface TimelineMessage {
+  type: 'timeline_event' | 'timeline_request' | 'timeline_response';
+  payload: TimelineEvent | TimeRange | SystemSnapshot;
 }
