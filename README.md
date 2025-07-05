@@ -97,6 +97,8 @@ Stargate is a self-hosted, real-time collaboration platform that keeps your sens
 
 ## 🚀 **Getting Started**
 
+Node: Install the [Bun runtime](https://bun.sh/) for fastest performance and best experience.
+
 ```bash
 # Clone and install
 git clone <repository-url>
