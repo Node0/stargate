@@ -30,8 +30,8 @@ global.MessageEvent = class MockMessageEvent extends global.Event {
 } as any;
 
 global.window = {
-  setTimeout: global.setTimeout,
-  clearTimeout: global.clearTimeout,
+  setTimeout: vi.fn().mockImplementation((fn, delay) => setTimeout(fn, delay)),
+  clearTimeout: vi.fn().mockImplementation((id) => clearTimeout(id)),
 } as any;
 
 // Mock WebSocket
@@ -48,7 +48,10 @@ class MockWebSocket {
   onerror: ((event: Event) => void) | null = null;
 
   constructor(public url: string) {
-    // Simulate async connection
+    // Simulate async connection - immediately set to connecting, then queue opening
+    this.readyState = MockWebSocket.CONNECTING;
+    
+    // Use setTimeout that will be handled by fake timers
     setTimeout(() => {
       this.readyState = MockWebSocket.OPEN;
       this.onopen?.(new global.Event('open'));

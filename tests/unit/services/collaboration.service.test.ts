@@ -22,11 +22,11 @@ describe('CollaborationService', () => {
   beforeEach(() => {
     // Reset mocks
     vi.clearAllMocks();
-    
+
     // Create mock unsubscribe functions
     mockWsUnsubscribe = vi.fn();
     mockConnectionUnsubscribe = vi.fn();
-    
+
     // Create mock WebSocket service
     mockWebSocketService = {
       onMessage: vi.fn().mockReturnValue(mockWsUnsubscribe),
@@ -38,7 +38,7 @@ describe('CollaborationService', () => {
       ping: vi.fn().mockResolvedValue(true),
       disconnect: vi.fn(),
     } as any;
-    
+
     // Create mock MessageBus service
     mockMessageBusService = {
       subscribe: vi.fn().mockReturnValue({ unsubscribe: vi.fn() }),
@@ -46,7 +46,7 @@ describe('CollaborationService', () => {
       getActiveChannels: vi.fn().mockReturnValue([]),
       dispose: vi.fn(),
     } as any;
-    
+
     // Create service instance
     collaborationService = new CollaborationService(mockWebSocketService, mockMessageBusService);
   });
@@ -157,7 +157,7 @@ describe('CollaborationService', () => {
       };
 
       expect(() => messageHandler(message)).not.toThrow();
-      
+
       // Should not publish anything for unknown types
       expect(mockMessageBusService.publish).not.toHaveBeenCalled();
     });
@@ -173,7 +173,7 @@ describe('CollaborationService', () => {
       malformedMessages.forEach(message => {
         expect(() => messageHandler(message)).not.toThrow();
       });
-      
+
       // Handle null and undefined separately since they cause different errors
       expect(() => messageHandler(null)).toThrow();
       expect(() => messageHandler(undefined)).toThrow();
@@ -345,24 +345,24 @@ describe('CollaborationService', () => {
 
     it('should test connection with ping', async () => {
       mockWebSocketService.ping.mockResolvedValue(true);
-      
+
       const result = await collaborationService.testConnection();
-      
+
       expect(mockWebSocketService.ping).toHaveBeenCalled();
       expect(result).toBe(true);
     });
 
     it('should handle ping failure', async () => {
       mockWebSocketService.ping.mockResolvedValue(false);
-      
+
       const result = await collaborationService.testConnection();
-      
+
       expect(result).toBe(false);
     });
 
     it('should handle ping error', async () => {
       mockWebSocketService.ping.mockRejectedValue(new Error('Ping failed'));
-      
+
       await expect(collaborationService.testConnection()).rejects.toThrow('Ping failed');
     });
   });
@@ -392,7 +392,7 @@ describe('CollaborationService', () => {
     it('should handle dispose when unsubscribe functions are undefined', () => {
       // Create a new service that might not have unsubscribe functions
       const serviceWithoutSubs = new CollaborationService(mockWebSocketService, mockMessageBusService);
-      
+
       // Mock the onMessage and onConnectionChange to return undefined
       mockWebSocketService.onMessage.mockReturnValue(undefined as any);
       mockWebSocketService.onConnectionChange.mockReturnValue(undefined as any);
@@ -439,7 +439,7 @@ describe('CollaborationService', () => {
   describe('integration scenarios', () => {
     it('should handle rapid message sequences', () => {
       const messageHandler = mockWebSocketService.onMessage.mock.calls[0][0];
-      
+
       // Simulate rapid incoming messages
       for (let i = 0; i < 100; i++) {
         messageHandler({
@@ -454,7 +454,7 @@ describe('CollaborationService', () => {
 
     it('should handle mixed message types in sequence', () => {
       const messageHandler = mockWebSocketService.onMessage.mock.calls[0][0];
-      
+
       const messages = [
         { type: 'text_change', index: 0, content: 'Text update' },
         { type: 'file_list_update', files: [] },
@@ -473,7 +473,7 @@ describe('CollaborationService', () => {
 
     it('should maintain state consistency during connection changes', () => {
       const connectionHandler = mockWebSocketService.onConnectionChange.mock.calls[0][0];
-      
+
       // Simulate connection status changes
       connectionHandler(false);
       connectionHandler(true);

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import WS from 'vitest-websocket-mock';
 import { WebSocketService, WebSocketConfig } from '../../../src/services/websocket.service';
 
 // Mock BrowserPrint
@@ -22,70 +23,28 @@ Object.defineProperty(global, 'window', {
   configurable: true
 });
 
-// Simple WebSocket mock
-class MockWebSocket {
-  static CONNECTING = 0;
-  static OPEN = 1;
-  static CLOSING = 2;
-  static CLOSED = 3;
-
-  readyState = MockWebSocket.CONNECTING;
-  onopen: ((event: any) => void) | null = null;
-  onclose: ((event: any) => void) | null = null;
-  onmessage: ((event: any) => void) | null = null;
-  onerror: ((event: any) => void) | null = null;
-  
-  constructor(public url: string) {}
-  
-  send = vi.fn();
-  close = vi.fn(() => {
-    this.readyState = MockWebSocket.CLOSED;
-  });
-  
-  // Test helpers
-  connect() {
-    this.readyState = MockWebSocket.OPEN;
-    this.onopen?.({ type: 'open' });
-  }
-  
-  simulateMessage(data: any) {
-    this.onmessage?.({ data: JSON.stringify(data) });
-  }
-  
-  simulateClose() {
-    this.readyState = MockWebSocket.CLOSED;
-    this.onclose?.({ code: 1000, reason: 'Normal closure' });
-  }
-}
-
-// Set static constants on the constructor
-MockWebSocket.CONNECTING = 0;
-MockWebSocket.OPEN = 1;
-MockWebSocket.CLOSING = 2;
-MockWebSocket.CLOSED = 3;
-
-global.WebSocket = MockWebSocket as any;
+// Also set as global for Node.js environment
+global.window = {
+  setTimeout: global.setTimeout,
+  clearTimeout: global.clearTimeout,
+} as any;
 
 describe('WebSocketService (Simplified)', () => {
   let service: WebSocketService;
-  let mockWs: MockWebSocket;
+  let server: WS;
+  const testUrl = 'ws://localhost:3000/_data_stream/app_logging_data';
 
   beforeEach(() => {
     vi.clearAllMocks();
-    
-    // Mock WebSocket constructor
-    global.WebSocket = vi.fn((url) => {
-      mockWs = new MockWebSocket(url);
-      return mockWs;
-    }) as any;
-    
-    service = new WebSocketService();
+    server = new WS(testUrl);
+    service = new WebSocketService({ url: testUrl });
   });
 
   afterEach(() => {
     if (service) {
       service.disconnect();
     }
+    WS.clean();
   });
 
   describe('Core Functionality', () => {
@@ -94,34 +53,32 @@ describe('WebSocketService (Simplified)', () => {
       expect(service.isConnected()).toBe(false);
     });
 
-    it('should establish WebSocket connection', () => {
+    it('should establish WebSocket connection', async () => {
       service.connect();
-      
-      expect(global.WebSocket).toHaveBeenCalledWith(
-        expect.stringContaining('wss://localhost:3000')
-      );
+      await server.connected;
+      expect(service.isConnected()).toBe(true);
     });
 
-    it('should handle connection state changes', () => {
+    it('should handle connection state changes', async () => {
       const handler = vi.fn();
       service.onConnectionChange(handler);
       
       service.connect();
-      mockWs.connect(); // Simulate successful connection
+      await server.connected;
       
       expect(handler).toHaveBeenCalledWith(true);
       expect(service.isConnected()).toBe(true);
     });
 
-    it('should send messages when connected', () => {
+    it('should send messages when connected', async () => {
       service.connect();
-      mockWs.connect(); // Simulate connection
+      await server.connected;
       
       const testData = { type: 'test', message: 'hello' };
       const result = service.send(testData);
       
       expect(result).toBe(true);
-      expect(mockWs.send).toHaveBeenCalledWith(JSON.stringify(testData));
+      await expect(server).toReceiveMessage(JSON.stringify(testData));
     });
 
     it('should return false when sending while disconnected', () => {
@@ -129,122 +86,138 @@ describe('WebSocketService (Simplified)', () => {
       expect(result).toBe(false);
     });
 
-    it('should receive and parse messages', () => {
+    it('should receive and parse messages', async () => {
       const messageHandler = vi.fn();
       service.onMessage(messageHandler);
       
       service.connect();
-      mockWs.connect();
+      await server.connected;
       
-      const testMessage = { type: 'test', data: 'hello' };
-      mockWs.simulateMessage(testMessage);
+      const testMessage = { type: 'text_change', content: 'hello', registerId: 1, timestamp: Date.now() };
+      server.send(testMessage);
       
       expect(messageHandler).toHaveBeenCalledWith(testMessage);
     });
 
-    it('should handle multiple message handlers', () => {
+    it('should handle multiple message handlers', async () => {
       const handler1 = vi.fn();
       const handler2 = vi.fn();
-      
       service.onMessage(handler1);
       service.onMessage(handler2);
       
       service.connect();
-      mockWs.connect();
+      await server.connected;
       
       const testMessage = { type: 'test' };
-      mockWs.simulateMessage(testMessage);
+      server.send(testMessage);
       
       expect(handler1).toHaveBeenCalledWith(testMessage);
       expect(handler2).toHaveBeenCalledWith(testMessage);
     });
 
-    it('should remove message handlers correctly', () => {
-      const handler = vi.fn();
-      
-      const unsubscribe = service.onMessage(handler);
-      unsubscribe();
+    it('should remove message handlers correctly', async () => {
+      const handler1 = vi.fn();
+      const handler2 = vi.fn();
+      const unsubscribe1 = service.onMessage(handler1);
+      service.onMessage(handler2);
       
       service.connect();
-      mockWs.connect();
-      mockWs.simulateMessage({ type: 'test' });
+      await server.connected;
       
-      expect(handler).not.toHaveBeenCalled();
+      // Remove first handler
+      unsubscribe1();
+      
+      const testMessage = { type: 'test' };
+      server.send(testMessage);
+      
+      expect(handler1).not.toHaveBeenCalled();
+      expect(handler2).toHaveBeenCalledWith(testMessage);
     });
 
-    it('should handle connection changes', () => {
+    it('should handle connection changes', async () => {
       const connectionHandler = vi.fn();
       service.onConnectionChange(connectionHandler);
       
       service.connect();
-      mockWs.connect();
+      await server.connected;
       
       expect(connectionHandler).toHaveBeenCalledWith(true);
       
-      mockWs.simulateClose();
+      service.disconnect();
       expect(connectionHandler).toHaveBeenCalledWith(false);
     });
 
-    it('should clean up on disconnect', () => {
+    it('should clean up on disconnect', async () => {
+      const messageHandler = vi.fn();
+      const connectionHandler = vi.fn();
+      
+      service.onMessage(messageHandler);
+      service.onConnectionChange(connectionHandler);
+      
       service.connect();
-      mockWs.connect();
+      await server.connected;
       
       service.disconnect();
       
-      expect(mockWs.close).toHaveBeenCalled();
-      expect(service.isConnected()).toBe(false);
+      // After disconnect, handlers should not be called
+      const testMessage = { type: 'test' };
+      server.send(testMessage);
+      
+      expect(messageHandler).not.toHaveBeenCalledWith(testMessage);
     });
   });
 
   describe('Message Types', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       service.connect();
-      mockWs.connect();
+      await server.connected;
     });
 
-    it('should handle text change messages', () => {
-      const handler = vi.fn();
-      service.onMessage(handler);
+    it('should handle text change messages', async () => {
+      const messageHandler = vi.fn();
+      service.onMessage(messageHandler);
       
       const textMessage = {
         type: 'text_change',
-        registerId: 1,
-        content: 'Hello World',
+        registerId: 123,
+        content: 'Hello world',
         timestamp: Date.now()
       };
       
-      mockWs.simulateMessage(textMessage);
-      expect(handler).toHaveBeenCalledWith(textMessage);
+      server.send(textMessage);
+      
+      expect(messageHandler).toHaveBeenCalledWith(textMessage);
     });
 
-    it('should handle file list update messages', () => {
-      const handler = vi.fn();
-      service.onMessage(handler);
+    it('should handle file list update messages', async () => {
+      const messageHandler = vi.fn();
+      service.onMessage(messageHandler);
       
       const fileMessage = {
         type: 'file_list_update',
         files: []
       };
       
-      mockWs.simulateMessage(fileMessage);
-      expect(handler).toHaveBeenCalledWith(fileMessage);
+      server.send(fileMessage);
+      
+      expect(messageHandler).toHaveBeenCalledWith(fileMessage);
     });
   });
 
   describe('File Operations', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       service.connect();
-      mockWs.connect();
+      await server.connected;
     });
 
-    it('should send file chunks', () => {
+    it('should send file chunks', async () => {
       const fileId = 'test-file-123';
-      const chunkData = { chunk: 1, data: 'chunk content' };
+      const chunkData = { chunk: 1, data: 'file content' };
       
       const result = service.sendFileChunk(fileId, chunkData);
       
       expect(result).toBe(true);
-      expect(mockWs.send).toHaveBeenCalledWith(JSON.stringify({
+      await expect(server).toReceiveMessage(JSON.stringify({
         type: 'file_chunk',
         req: btoa(JSON.stringify({ success: true, body: chunkData }))
       }));
@@ -253,40 +226,38 @@ describe('WebSocketService (Simplified)', () => {
     it('should handle file chunk send when disconnected', () => {
       service.disconnect();
       
-      const result = service.sendFileChunk('test-file', {});
+      const result = service.sendFileChunk('test-file', { data: 'test' });
       expect(result).toBe(false);
     });
   });
 
   describe('Error Handling', () => {
-    it('should handle invalid JSON gracefully', () => {
+    it('should handle invalid JSON gracefully', async () => {
       const messageHandler = vi.fn();
       service.onMessage(messageHandler);
       
       service.connect();
-      mockWs.connect();
+      await server.connected;
       
-      // Simulate invalid JSON
-      mockWs.onmessage?.({ data: 'invalid json' });
+      // Send invalid JSON
+      server.send('invalid json {');
       
+      // Should not crash, handler should not be called
       expect(messageHandler).not.toHaveBeenCalled();
     });
 
-    it('should handle send errors gracefully', () => {
+    it('should handle send errors gracefully', async () => {
       service.connect();
-      mockWs.connect();
+      await server.connected;
       
-      mockWs.send.mockImplementation(() => {
-        throw new Error('Send failed');
-      });
+      // Close server to simulate error
+      server.close();
       
       const result = service.send({ type: 'test' });
       expect(result).toBe(false);
     });
 
     it('should be safe to disconnect multiple times', () => {
-      service.connect();
-      
       expect(() => {
         service.disconnect();
         service.disconnect();
@@ -297,42 +268,47 @@ describe('WebSocketService (Simplified)', () => {
 
   describe('Configuration', () => {
     it('should use custom configuration', () => {
-      const config: WebSocketConfig = {
+      const customConfig: WebSocketConfig = {
         url: 'wss://custom.host/websocket',
         reconnectDelay: 3000,
         maxReconnectAttempts: 5
       };
 
-      const customService = new WebSocketService(config);
+      const customService = new WebSocketService(customConfig);
       expect(customService).toBeDefined();
     });
 
-    it('should use custom URL when provided', () => {
-      const customUrl = 'wss://example.com/custom-path';
+    it('should use custom URL when provided', async () => {
+      const customUrl = 'ws://custom.host:8080/ws';
+      const customServer = new WS(customUrl);
       const customService = new WebSocketService({ url: customUrl });
       
       customService.connect();
+      await customServer.connected;
       
-      expect(global.WebSocket).toHaveBeenCalledWith(customUrl);
+      expect(customService.isConnected()).toBe(true);
+      
+      customService.disconnect();
+      WS.clean();
     });
   });
 
   describe('Ping/Pong', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       service.connect();
-      mockWs.connect();
+      await server.connected;
     });
 
     it('should send ping messages', async () => {
       const pingPromise = service.ping();
       
-      expect(mockWs.send).toHaveBeenCalledWith(JSON.stringify({
+      await expect(server).toReceiveMessage(JSON.stringify({
         type: 'ping',
         timestamp: expect.any(Number)
       }));
       
       // Simulate pong response
-      mockWs.simulateMessage({ type: 'pong' });
+      server.send({ type: 'pong' });
       
       const result = await pingPromise;
       expect(result).toBe(true);

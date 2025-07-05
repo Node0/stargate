@@ -43,6 +43,7 @@
     "process": "^0.11.10",
     "typescript": "^5.8.3",
     "util": "^0.12.5",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "vitest-websocket-mock": "^0.5.0"
   }
 }
