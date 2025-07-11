@@ -43,6 +43,18 @@ All backed by a privacy-first, zero-cloud architecture that keeps your data wher
 
 ---
 
+## UI Screenshot
+
+<img width="800" height="627" alt="Stargate_basic_screenshot" src="https://github.com/user-attachments/assets/1e284796-fe6d-4716-bb14-a6c2e1d01058" />
+
+
+
+
+
+
+
+
+
 ## 🧱 Architecture Overview
 
 ### Backend (Bun + TypeScript)
