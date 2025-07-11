@@ -1,6 +1,8 @@
 {
   "name": "stargate",
-  "version": "2.0.0",
+  "version": "3.0.0",
+  "author": "Joe Hacobian",
+  "license": "Affero GPL v3.0",
   "type": "module",
   "scripts": {
     "start": "npm run build && npm run server",
@@ -11,13 +13,12 @@
     "test": "vitest"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
   "description": "WebSocket-based real-time collaboration platform with Aurelia 2.0 and TypeScript",
   "dependencies": {
     "@aurelia/kernel": "^2.0.0-beta.24",
     "@aurelia/metadata": "^2.0.0-beta.24",
     "@aurelia/runtime-html": "^2.0.0-beta.24",
+    "@libsql/client": "^0.15.9",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.3",
     "@types/multer": "^1.4.13",
@@ -27,8 +28,10 @@
     "better-sqlite3": "^12.1.1",
     "colors": "^1.4.0",
     "express": "^5.1.0",
+    "minisearch": "^7.1.2",
     "multer": "^2.0.1",
     "shorthash2": "^1.0.5",
+    "sql.js": "^1.13.0",
     "ws": "^8.18.2"
   },
   "devDependencies": {

@@ -2,10 +2,18 @@ import express, { Request, Response, NextFunction } from 'express';
 import https from 'https';
 import fs from 'fs';
 import path from 'path';
-import WebSocket from 'ws';
+import { fileURLToPath } from 'url';
+import WebSocket, { WebSocketServer } from 'ws';
 import multer from 'multer';
 import { ArgumentParser } from 'argparse';
+
+// ES module compatibility
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import { Print, ErrorInterceptor, RequestEncoder, FileManager } from './utilities';
+import { EventStore } from './services/event-store';
+import { TimeMapCalculator } from './services/timemap-calculator';
+import { SearchIndexManager } from './services/search-index-manager';
 
 // Global uncaught error and exception capture
 ErrorInterceptor();
@@ -78,12 +86,16 @@ export class Stargate {
   private config: Config;
   private sslOptions: https.ServerOptions;
   private server: https.Server;
-  private wss: WebSocket.Server;
+  private wss: WebSocketServer;
   private clientStates: Map<string, ClientState>;
   private wsHeartbeatInterval: NodeJS.Timeout | null;
   private tempCleanupInterval: NodeJS.Timeout | null;
   private fileManager: FileManager;
   private upload: multer.Multer;
+  private eventStore: EventStore;
+  private timeMapCalculator: TimeMapCalculator;
+  private searchIndexManager: SearchIndexManager;
+  private clientSequences: Map<string, number> = new Map();
 
   constructor() {
     this.app = express();
@@ -101,7 +113,7 @@ export class Stargate {
 
     // Create HTTPS server before setupRoutes
     this.server = https.createServer(this.sslOptions, this.app);
-    this.wss = new WebSocket.Server({ noServer: true });
+    this.wss = new WebSocketServer({ noServer: true });
 
     // Load configuration and set up middleware and routes
     this.loadConfig();
@@ -111,6 +123,15 @@ export class Stargate {
       path.join(__dirname, '../storage'),
       this.config
     );
+
+    // Initialize event store
+    this.eventStore = new EventStore();
+
+    // Initialize time map calculator
+    this.timeMapCalculator = new TimeMapCalculator(this.eventStore);
+
+    // Initialize search index manager
+    this.searchIndexManager = new SearchIndexManager(this.eventStore);
 
     // Set up multer for streaming file uploads after FileManager is ready
     this.setupMulter();
@@ -338,6 +359,340 @@ export class Stargate {
     return 'client_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   }
 
+  // Get next sequence number for a client
+  private getNextSequence(clientId: string): number {
+    const current = this.clientSequences.get(clientId) || 0;
+    const next = current + 1;
+    this.clientSequences.set(clientId, next);
+    return next;
+  }
+
+  // Handle timemap requests
+  private async handleTimeMapRequest(clientId: string, message: any): Promise<void> {
+    const { action, req } = message;
+    
+    try {
+      // Decode request data if present
+      let requestData: any = {};
+      if (req) {
+        const { success, body } = RequestEncoder.decode(req);
+        if (!success) {
+          this.sendToClient(clientId, { 
+            type: 'timemap_response', 
+            action, 
+            error: 'Invalid request encoding' 
+          });
+          return;
+        }
+        requestData = body;
+      }
+      
+      Print('DEBUG', `Processing timemap action: ${action}`);
+      
+      switch (action) {
+        case 'get_map':
+          const mapData = await this.timeMapCalculator.calculateTimeMap();
+          const serializedMapData = this.timeMapCalculator.serializeTimeMapData(mapData);
+          
+          this.sendToClient(clientId, {
+            type: 'timemap_response',
+            action: 'map_data',
+            data: serializedMapData
+          });
+          
+          Print('DEBUG', `Sent TimeMap data to ${clientId}: ${mapData.totalEvents} events`);
+          break;
+          
+        case 'get_day':
+          if (!requestData.date) {
+            this.sendToClient(clientId, { 
+              type: 'timemap_response', 
+              action, 
+              error: 'Date parameter required' 
+            });
+            return;
+          }
+          
+          const dayEvents = await this.timeMapCalculator.getEventsForDay(requestData.date);
+          const serializedDayEvents = this.timeMapCalculator.serializeDayEvents(dayEvents);
+          
+          this.sendToClient(clientId, {
+            type: 'timemap_response',
+            action: 'day_events',
+            data: serializedDayEvents
+          });
+          
+          Print('DEBUG', `Sent day events to ${clientId}: ${dayEvents.events.length} events for ${requestData.date}`);
+          break;
+          
+        case 'get_month':
+          if (!requestData.year || !requestData.month) {
+            this.sendToClient(clientId, { 
+              type: 'timemap_response', 
+              action, 
+              error: 'Year and month parameters required' 
+            });
+            return;
+          }
+          
+          const monthEvents = await this.timeMapCalculator.getEventsForMonth(requestData.year, requestData.month);
+          
+          this.sendToClient(clientId, {
+            type: 'timemap_response',
+            action: 'month_events',
+            data: { events: monthEvents }
+          });
+          
+          Print('DEBUG', `Sent month events to ${clientId}: ${monthEvents.length} events for ${requestData.year}-${requestData.month}`);
+          break;
+          
+        case 'get_year':
+          if (!requestData.year) {
+            this.sendToClient(clientId, { 
+              type: 'timemap_response', 
+              action, 
+              error: 'Year parameter required' 
+            });
+            return;
+          }
+          
+          const yearEvents = await this.timeMapCalculator.getEventsForYear(requestData.year);
+          
+          this.sendToClient(clientId, {
+            type: 'timemap_response',
+            action: 'year_events',
+            data: { events: yearEvents }
+          });
+          
+          Print('DEBUG', `Sent year events to ${clientId}: ${yearEvents.length} events for ${requestData.year}`);
+          break;
+          
+        default:
+          this.sendToClient(clientId, { 
+            type: 'timemap_response', 
+            action, 
+            error: `Unknown action: ${action}` 
+          });
+          Print('WARNING', `Unknown timemap action: ${action} from ${clientId}`);
+      }
+    } catch (error) {
+      Print('ERROR', `TimeMap request failed: ${(error as Error).message}`);
+      this.sendToClient(clientId, { 
+        type: 'timemap_response', 
+        action, 
+        error: (error as Error).message 
+      });
+    }
+  }
+
+  // Handle search requests
+  private async handleSearchRequest(clientId: string, message: any): Promise<void> {
+    const { action, req } = message;
+    
+    try {
+      // Decode request data if present
+      let requestData: any = {};
+      if (req) {
+        const { success, body } = RequestEncoder.decode(req);
+        if (!success) {
+          this.sendToClient(clientId, { 
+            type: 'search_response', 
+            action, 
+            error: 'Invalid request encoding' 
+          });
+          return;
+        }
+        requestData = body;
+      }
+      
+      Print('DEBUG', `Processing search action: ${action}`);
+      
+      switch (action) {
+        case 'get_bundle':
+          const bundle = await this.searchIndexManager.getSmartBundle();
+          
+          this.sendToClient(clientId, {
+            type: 'search_response',
+            action: 'bundle',
+            data: bundle
+          });
+          
+          Print('DEBUG', `Sent search bundle to ${clientId}: ${bundle.totalDocuments} documents`);
+          break;
+          
+        case 'search':
+          if (!requestData.query) {
+            this.sendToClient(clientId, { 
+              type: 'search_response', 
+              action, 
+              error: 'Query parameter required' 
+            });
+            return;
+          }
+          
+          const searchResults = this.searchIndexManager.search(requestData.query, {
+            limit: requestData.limit || 20,
+            timeRange: requestData.timeRange,
+            type: requestData.type
+          });
+          
+          this.sendToClient(clientId, {
+            type: 'search_response',
+            action: 'results',
+            data: { 
+              query: requestData.query, 
+              results: searchResults,
+              total: searchResults.length
+            }
+          });
+          
+          Print('DEBUG', `Sent search results to ${clientId}: ${searchResults.length} results for "${requestData.query}"`);
+          break;
+          
+        case 'suggest':
+          if (!requestData.prefix) {
+            this.sendToClient(clientId, { 
+              type: 'search_response', 
+              action, 
+              error: 'Prefix parameter required' 
+            });
+            return;
+          }
+          
+          const suggestions = this.searchIndexManager.getSuggestions(
+            requestData.prefix, 
+            requestData.limit || 10
+          );
+          
+          this.sendToClient(clientId, {
+            type: 'search_response',
+            action: 'suggestions',
+            data: { 
+              prefix: requestData.prefix, 
+              suggestions 
+            }
+          });
+          
+          Print('DEBUG', `Sent suggestions to ${clientId}: ${suggestions.length} suggestions for "${requestData.prefix}"`);
+          break;
+          
+        case 'stats':
+          const stats = this.searchIndexManager.getIndexStats();
+          
+          this.sendToClient(clientId, {
+            type: 'search_response',
+            action: 'stats',
+            data: stats
+          });
+          
+          Print('DEBUG', `Sent search stats to ${clientId}: ${stats.documentCount} documents, version ${stats.indexVersion}`);
+          break;
+          
+        default:
+          this.sendToClient(clientId, { 
+            type: 'search_response', 
+            action, 
+            error: `Unknown action: ${action}` 
+          });
+          Print('WARNING', `Unknown search action: ${action} from ${clientId}`);
+      }
+    } catch (error) {
+      Print('ERROR', `Search request failed: ${(error as Error).message}`);
+      this.sendToClient(clientId, { 
+        type: 'search_response', 
+        action, 
+        error: (error as Error).message 
+      });
+    }
+  }
+
+  // Handle browser console log messages
+  private handleBrowserLog(clientId: string, logData: any): void {
+    try {
+      const { logType, message, timestamp, functionName, url, userAgent } = logData;
+      
+      // Format log message for server console
+      const formattedMessage = `[BROWSER] ${logType}: ${timestamp} - ${functionName} - ${message}`;
+      const urlInfo = `URL: ${url}`;
+      
+      // Print to server console with appropriate level
+      switch (logType) {
+        case 'ERROR':
+        case 'CRITICAL':
+        case 'EXCEPTION':
+        case 'FAILURE':
+          Print('ERROR', formattedMessage);
+          Print('DEBUG', urlInfo);
+          break;
+        case 'WARNING':
+          Print('WARNING', formattedMessage);
+          break;
+        case 'SUCCESS':
+        case 'COMPLETED':
+          Print('SUCCESS', formattedMessage);
+          break;
+        case 'DEBUG':
+        case 'TRACE':
+          Print('DEBUG', formattedMessage);
+          break;
+        default:
+          Print('INFO', formattedMessage);
+      }
+      
+      // Write to browser console log file
+      this.writeBrowserLogToFile(logData, clientId);
+      
+    } catch (error) {
+      Print('ERROR', `Failed to handle browser log: ${(error as Error).message}`);
+    }
+  }
+
+  // Write browser log to file
+  private writeBrowserLogToFile(logData: any, clientId: string): void {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      
+      const logDir = path.join(__dirname, '../logs');
+      const logFile = path.join(logDir, 'browser_console.log');
+      
+      // Ensure logs directory exists
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
+      }
+      
+      // Format log entry
+      const { logType, message, timestamp, functionName, url, userAgent } = logData;
+      const logEntry = {
+        timestamp,
+        clientId,
+        logType,
+        functionName,
+        message,
+        url,
+        userAgent: userAgent.substring(0, 100) // Truncate user agent
+      };
+      
+      // Append to log file as JSON lines
+      const logLine = JSON.stringify(logEntry) + '\n';
+      fs.appendFileSync(logFile, logLine);
+      
+    } catch (error) {
+      Print('ERROR', `Failed to write browser log to file: ${(error as Error).message}`);
+    }
+  }
+
+  // Send message to specific client
+  private sendToClient(clientId: string, message: any): void {
+    const client = this.clientStates.get(clientId);
+    if (client && client.ws.readyState === WebSocket.OPEN) {
+      client.ws.send(JSON.stringify(message));
+      Print('TRACE', `Sent message to ${clientId}: ${message.type}`);
+    } else {
+      Print('WARNING', `Cannot send message to ${clientId}: client not connected`);
+    }
+  }
+
   // Handle WebSocket messages with enhanced reliability
   private handleWebSocketMessage(clientId: string, message: WebSocket.Data): void {
     Print('DEBUG', `Received WebSocket message from ${clientId}`);
@@ -356,10 +711,38 @@ export class Stargate {
         } else {
           Print('ERROR', `Invalid REQ header in file chunk from ${clientId}`);
         }
+      } else if (data.type === 'timemap_request') {
+        Print('DEBUG', `Handling timemap request from ${clientId}`);
+        this.handleTimeMapRequest(clientId, data);
+      } else if (data.type === 'search_request') {
+        Print('DEBUG', `Handling search request from ${clientId}`);
+        this.handleSearchRequest(clientId, data);
+      } else if (data.type === 'browser_log') {
+        this.handleBrowserLog(clientId, data);
       } else {
         // Default behavior: broadcast to all clients (for text collaboration)
         Print('DEBUG', `Broadcasting text collaboration message from ${clientId} to ${this.wss.clients.size} clients`);
         Print('TRACE', `Text message content: index=${data.index}, content length=${data.content ? data.content.length : 'undefined'}`);
+
+        // Record text change events to EventStore
+        if (data.type === 'text_change' && data.index !== undefined && data.content !== undefined) {
+          const sequenceNum = this.getNextSequence(clientId);
+          this.eventStore.recordEvent({
+            event_type: 'text_change',
+            entity_id: `register${data.index + 1}`,
+            payload: { content: data.content },
+            client_id: clientId,
+            sequence_num: sequenceNum
+          }).then(event => {
+            // Update search index and broadcast delta
+            const indexDelta = this.searchIndexManager.handleIndexDelta(event);
+            this.broadcastIndexDelta(indexDelta);
+            
+            Print('DEBUG', `Recorded text_change event for register${data.index + 1} (seq: ${sequenceNum})`);
+          }).catch(error => {
+            Print('ERROR', `Failed to record text_change event: ${error.message}`);
+          });
+        }
 
         const jsonMessage = JSON.stringify(data);
         let broadcastCount = 0;
@@ -579,6 +962,27 @@ export class Stargate {
 
         Print('DEBUG', `File saved successfully: ${JSON.stringify(fileInfo)}`);
 
+        // Record file upload event
+        const sequenceNum = this.getNextSequence(clientId);
+        const uploadEvent = await this.eventStore.recordEvent({
+          event_type: 'file_upload',
+          entity_id: fileInfo.storedName,
+          payload: { 
+            filename: fileInfo.displayName,
+            storedName: fileInfo.storedName,
+            size: fileInfo.size,
+            hash: fileInfo.hash
+          },
+          client_id: clientId,
+          sequence_num: sequenceNum
+        });
+        
+        // Update search index and broadcast delta
+        const indexDelta = this.searchIndexManager.handleIndexDelta(uploadEvent);
+        this.broadcastIndexDelta(indexDelta);
+        
+        Print('DEBUG', `Recorded file_upload event for ${fileInfo.displayName} (seq: ${sequenceNum})`);
+
         // Broadcast update to all clients
         this.broadcastFileListUpdate();
         client.activeTransfers.delete(fileId);
@@ -614,6 +1018,22 @@ export class Stargate {
     });
 
     Print('INFO', `Broadcasted file list update to ${this.wss.clients.size} clients`);
+  }
+
+  // Broadcast search index delta to all connected clients
+  private broadcastIndexDelta(delta: any): void {
+    const message = JSON.stringify({
+      type: 'index_delta',
+      delta
+    });
+
+    this.wss.clients.forEach((client: WebSocket) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
+
+    Print('DEBUG', `Broadcasted index delta to ${this.wss.clients.size} clients: v${delta.fromVersion} -> v${delta.toVersion}`);
   }
 
   // Send initial data to a newly connected client
@@ -660,6 +1080,28 @@ export class Stargate {
         size: req.file.size
       });
 
+      // Record file upload event (HTTP upload gets client ID from IP)
+      const clientId = `http_${req.ip || 'unknown'}_${Date.now()}`;
+      const sequenceNum = this.getNextSequence(clientId);
+      const uploadEvent = await this.eventStore.recordEvent({
+        event_type: 'file_upload',
+        entity_id: fileInfo.storedName,
+        payload: { 
+          filename: fileInfo.displayName,
+          storedName: fileInfo.storedName,
+          size: fileInfo.size,
+          hash: fileInfo.hash
+        },
+        client_id: clientId,
+        sequence_num: sequenceNum
+      });
+      
+      // Update search index and broadcast delta
+      const indexDelta = this.searchIndexManager.handleIndexDelta(uploadEvent);
+      this.broadcastIndexDelta(indexDelta);
+      
+      Print('DEBUG', `Recorded file_upload event for ${fileInfo.displayName} via HTTP (seq: ${sequenceNum})`);
+
       this.broadcastFileListUpdate();
       res.json({ success: true, fileInfo });
 
@@ -700,6 +1142,28 @@ export class Stargate {
         filename,
         hostname: req.ip || 'unknown'
       });
+
+      // Record file upload event (legacy HTTP upload gets client ID from IP)
+      const clientId = `http_legacy_${req.ip || 'unknown'}_${Date.now()}`;
+      const sequenceNum = this.getNextSequence(clientId);
+      const uploadEvent = await this.eventStore.recordEvent({
+        event_type: 'file_upload',
+        entity_id: fileInfo.storedName,
+        payload: { 
+          filename: fileInfo.displayName,
+          storedName: fileInfo.storedName,
+          size: fileInfo.size,
+          hash: fileInfo.hash
+        },
+        client_id: clientId,
+        sequence_num: sequenceNum
+      });
+      
+      // Update search index and broadcast delta
+      const indexDelta = this.searchIndexManager.handleIndexDelta(uploadEvent);
+      this.broadcastIndexDelta(indexDelta);
+      
+      Print('DEBUG', `Recorded file_upload event for ${fileInfo.displayName} via legacy HTTP (seq: ${sequenceNum})`);
 
       this.broadcastFileListUpdate();
       res.sendREQ!(true, { fileInfo });
@@ -810,6 +1274,20 @@ export class Stargate {
     try {
       const deleted = await this.fileManager.deleteFile(filename);
       if (deleted) {
+        // Record file deletion event
+        const clientId = `http_delete_${req.ip || 'unknown'}_${Date.now()}`;
+        const sequenceNum = this.getNextSequence(clientId);
+        this.eventStore.recordEvent({
+          event_type: 'file_delete',
+          entity_id: filename,
+          payload: { 
+            filename: filename
+          },
+          client_id: clientId,
+          sequence_num: sequenceNum
+        });
+        Print('DEBUG', `Recorded file_delete event for ${filename} via HTTP (seq: ${sequenceNum})`);
+
         this.broadcastFileListUpdate();
         res.sendREQ!(true, { message: 'File deleted successfully' });
       } else {

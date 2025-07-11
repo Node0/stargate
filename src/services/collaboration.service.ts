@@ -63,6 +63,18 @@ export class CollaborationService {
         this.messageBus.publish('config:update', msg.config);
         break;
         
+      case 'timemap_response':
+        this.messageBus.publish('timemap:response', msg);
+        break;
+        
+      case 'search_response':
+        this.messageBus.publish('search:response', msg);
+        break;
+        
+      case 'index_delta':
+        this.messageBus.publish('index_delta', msg.delta);
+        break;
+        
       default:
         BrowserPrint('DEBUG', `Unknown message type: ${msg.type}`);
     }
@@ -97,6 +109,11 @@ export class CollaborationService {
   // File operations (chunk handling)
   sendFileChunk(fileId: string, chunkData: any): boolean {
     return this.websocket.sendFileChunk(fileId, chunkData);
+  }
+  
+  // Send raw message
+  sendMessage(message: any): boolean {
+    return this.websocket.send(message);
   }
   
   // Connection management

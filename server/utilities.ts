@@ -1,7 +1,12 @@
 import colors from 'colors';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import shorthash from 'shorthash2';
+
+// ES module compatibility
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Logging configuration
 interface LoggingConfig {

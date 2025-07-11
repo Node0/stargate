@@ -1,0 +1,394 @@
+<div class="timemap-container">
+  <!-- TimeMap Header -->
+  <div class="timemap-header">
+    <h3>Activity Timeline</h3>
+    <div class="timemap-stats" if.bind="timeMapData">
+      <span>${timeMapData.totalEvents} events</span>
+      <span if.bind="timeMapData.years.length > 0">
+        (${timeMapData.dateRange.start.split('T')[0]} - ${timeMapData.dateRange.end.split('T')[0]})
+      </span>
+    </div>
+  </div>
+
+  <!-- Year selector -->
+  <div class="year-selector">
+    <button 
+      click.trigger="selectAllTime()" 
+      class="year-button ${selectedRange === 'all' ? 'active' : ''}">
+      All Time
+    </button>
+    <button 
+      repeat.for="year of years" 
+      click.trigger="selectYear(year)"
+      class="year-button ${selectedRange === 'year' && selectedYear === year ? 'active' : ''}">
+      ${year}
+    </button>
+  </div>
+
+  <!-- TimeMap Grid - GitHub Style -->
+  <div class="timemap-grid" if.bind="timeMapData && timeMapData.totalEvents > 0">
+    <!-- Weekday labels -->
+    <div class="weekday-labels">
+      <div class="weekday-label">Mon</div>
+      <div class="weekday-label">Wed</div>
+      <div class="weekday-label">Fri</div>
+    </div>
+
+    <!-- Month labels -->
+    <div class="month-labels">
+      <div 
+        repeat.for="month of months" 
+        class="month-label"
+        click.trigger="selectMonth(currentYear, $index + 1)"
+        title="Click to view ${month} ${currentYear}">
+        ${month}
+      </div>
+    </div>
+
+    <!-- Activity grid -->
+    <div class="activity-grid">
+      <div repeat.for="week of dayGrid" class="week-column">
+        <div 
+          repeat.for="day of week" 
+          class="activity-day ${day.activityLevel} ${day.isSelected ? 'selected' : ''}"
+          click.trigger="day.date ? selectDay(day.date) : null"
+          title="${day.date ? day.date + ': ' + day.eventCount + ' events' : ''}">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Empty state -->
+  <div class="timemap-empty" if.bind="!timeMapData || timeMapData.totalEvents === 0">
+    <div class="empty-icon">📊</div>
+    <h4>No Activity Data</h4>
+    <p>Start using Stargate to see your activity timeline</p>
+  </div>
+
+  <!-- Legend and Quantum Navigator -->
+  <div class="timemap-footer" if.bind="timeMapData && timeMapData.totalEvents > 0">
+    <!-- Quantum Back button (left side) -->
+    <button class="quantum-btn quantum-left" 
+            click.trigger="quantumBack()"
+            disabled.bind="!canGoBack"
+            title="Previous event">
+      <span class="arrow">←</span>
+      <span class="text">Back</span>
+    </button>
+    
+    <!-- Activity Legend (center) -->
+    <div class="activity-legend">
+      <span class="legend-label">Less</span>
+      <div class="legend-squares">
+        <div class="legend-square activity-none" title="No activity"></div>
+        <div class="legend-square activity-low" title="1-3 events"></div>
+        <div class="legend-square activity-medium" title="4-10 events"></div>
+        <div class="legend-square activity-high" title="11-20 events"></div>
+        <div class="legend-square activity-max" title="21+ events"></div>
+      </div>
+      <span class="legend-label">More</span>
+    </div>
+    
+    <!-- Quantum Forward button (right side) -->
+    <button class="quantum-btn quantum-right" 
+            click.trigger="quantumForward()"
+            disabled.bind="!canGoForward"
+            title="Next event">
+      <span class="text">Forward</span>
+      <span class="arrow">→</span>
+    </button>
+  </div>
+</div>
+
+<style>
+  .timemap-container {
+    background: #f8f9fa;
+    border: 1px solid #e1e4e8;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 16px 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  .timemap-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+
+  .timemap-header h3 {
+    margin: 0;
+    color: #24292e;
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .timemap-stats {
+    font-size: 12px;
+    color: #586069;
+  }
+
+  .year-selector {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .year-button {
+    padding: 6px 12px;
+    border: 1px solid #d1d5da;
+    border-radius: 4px;
+    background: white;
+    color: #586069;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+  }
+
+  .year-button:hover {
+    background: #f6f8fa;
+    border-color: #c6cbd1;
+  }
+
+  .year-button.active {
+    background: #0366d6;
+    color: white;
+    border-color: #0366d6;
+  }
+
+  .timemap-grid {
+    background: white;
+    border: 1px solid #e1e4e8;
+    border-radius: 6px;
+    padding: 16px;
+    margin-bottom: 16px;
+    position: relative;
+  }
+
+  .weekday-labels {
+    position: absolute;
+    left: 0;
+    top: 45px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 30px;
+  }
+
+  .weekday-label {
+    font-size: 9px;
+    color: #586069;
+    text-align: right;
+    padding: 2px;
+    height: 11px;
+    line-height: 11px;
+  }
+
+  .month-labels {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 8px;
+    margin-left: 35px;
+  }
+
+  .month-label {
+    font-size: 10px;
+    color: #586069;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background 0.2s;
+    padding: 2px 4px;
+    flex: 1;
+    text-align: center;
+  }
+
+  .month-label:hover {
+    background: #f6f8fa;
+  }
+
+  .activity-grid {
+    display: flex;
+    gap: 2px;
+    margin-left: 35px;
+    overflow-x: auto;
+  }
+
+  .week-column {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .activity-day {
+    width: 11px;
+    height: 11px;
+    border: 1px solid rgba(27, 31, 35, 0.06);
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .activity-day:hover {
+    border-color: rgba(27, 31, 35, 0.35);
+  }
+
+  .activity-day.selected {
+    border-color: #0366d6;
+    border-width: 2px;
+  }
+
+  /* Activity levels */
+  .activity-none {
+    background: #ebedf0;
+  }
+
+  .activity-low {
+    background: #9be9a8;
+  }
+
+  .activity-medium {
+    background: #40c463;
+  }
+
+  .activity-high {
+    background: #30a14e;
+  }
+
+  .activity-max {
+    background: #216e39;
+  }
+
+  .timemap-empty {
+    text-align: center;
+    padding: 32px;
+    color: #586069;
+  }
+
+  .empty-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+  }
+
+  .timemap-empty h4 {
+    margin: 0 0 8px 0;
+    color: #24292e;
+  }
+
+  .timemap-empty p {
+    margin: 0;
+    font-size: 14px;
+  }
+
+  .activity-legend {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 11px;
+    color: #586069;
+  }
+
+  .legend-squares {
+    display: flex;
+    gap: 2px;
+  }
+
+  .legend-square {
+    width: 10px;
+    height: 10px;
+    border: 1px solid #e1e4e8;
+    border-radius: 2px;
+    cursor: help;
+  }
+
+  .legend-label {
+    font-size: 11px;
+    color: #586069;
+  }
+
+  .timemap-footer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 10px;
+    position: relative;
+    padding: 10px 0;
+  }
+
+  .quantum-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 8px 16px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+  }
+
+  .quantum-btn:hover:not(:disabled) {
+    background: #0056b3;
+    transform: scale(1.05);
+  }
+
+  .quantum-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .quantum-left {
+    position: absolute;
+    left: 20px;
+  }
+
+  .quantum-right {
+    position: absolute;
+    right: 20px;
+  }
+
+  .activity-legend {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .timemap-container {
+      padding: 12px;
+    }
+
+    .timemap-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .year-selector {
+      justify-content: center;
+    }
+
+    .month-headers {
+      grid-template-columns: 30px repeat(12, 1fr);
+    }
+
+    .week-row {
+      grid-template-columns: 30px repeat(7, 1fr);
+    }
+
+    .month-header-spacer {
+      width: 30px;
+    }
+
+    .day-cell {
+      width: 10px;
+      height: 10px;
+    }
+  }
+</style>

@@ -3,6 +3,73 @@ type LogType = 'SUCCESS' | 'FAILURE' | 'STATE' | 'INFO' | 'IMPORTANT' | 'CRITICA
               'EXCEPTION' | 'WARNING' | 'DEBUG' | 'ATTEMPT' | 'STARTING' | 'PROGRESS' | 
               'COMPLETED' | 'ERROR' | 'TRACE';
 
+// Interface for sending logs to server
+interface LogMessage {
+  type: 'browser_log';
+  logType: LogType;
+  message: string;
+  timestamp: string;
+  functionName: string;
+  url: string;
+  userAgent: string;
+}
+
+// Global WebSocket reference for sending logs
+let logWebSocket: WebSocket | null = null;
+
+// Initialize WebSocket connection for logging
+export function initializeBrowserLogger(): void {
+  try {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/_data_stream/app_logging_data`;
+    
+    logWebSocket = new WebSocket(wsUrl);
+    
+    logWebSocket.onopen = () => {
+      console.log('🔗 Browser logger WebSocket connected');
+    };
+    
+    logWebSocket.onclose = () => {
+      console.log('❌ Browser logger WebSocket disconnected');
+      logWebSocket = null;
+    };
+    
+    logWebSocket.onerror = (error) => {
+      console.error('⚠️ Browser logger WebSocket error:', error);
+    };
+  } catch (error) {
+    console.error('Failed to initialize browser logger WebSocket:', error);
+  }
+}
+
+// Send log message to server
+function sendLogToServer(logType: LogType, message: string, functionName: string, timestamp: string): void {
+  if (!logWebSocket || logWebSocket.readyState !== WebSocket.OPEN) {
+    // Try to reconnect if not connected
+    if (!logWebSocket) {
+      initializeBrowserLogger();
+    }
+    return;
+  }
+  
+  try {
+    const logMessage: LogMessage = {
+      type: 'browser_log',
+      logType,
+      message,
+      timestamp,
+      functionName,
+      url: window.location.href,
+      userAgent: navigator.userAgent
+    };
+    
+    logWebSocket.send(JSON.stringify(logMessage));
+  } catch (error) {
+    // Fail silently to avoid infinite loops
+    console.error('Failed to send log to server:', error);
+  }
+}
+
 export function BrowserPrint(logType: LogType, message: string): void {
   const timestamp = new Date().toISOString();
   
@@ -44,4 +111,7 @@ export function BrowserPrint(logType: LogType, message: string): void {
   
   // Use appropriate console method
   (console as any)[config.method](formattedMessage, config.style);
+  
+  // Also send to server for logging
+  sendLogToServer(logType, message, functionName, timestamp);
 }

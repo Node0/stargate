@@ -1,0 +1,307 @@
+<div class="day-scrubber-container" if.bind="visible">
+  <!-- Day scrubber header -->
+  <div class="day-scrubber-header">
+    <h4>Day Timeline: ${currentDayFormatted}</h4>
+    <div class="day-stats">
+      <span>${eventsForDay.length} events</span>
+      <span class="current-time">${getCurrentTime()}</span>
+    </div>
+  </div>
+
+  <!-- Hour markers -->
+  <div class="hour-markers">
+    <div 
+      repeat.for="marker of hourMarkersForTemplate" 
+      class="hour-marker ${getHourActivityLevel(marker.eventCount)}"
+      style="left: ${marker.percentage}%"
+      click.trigger="jumpToHour(marker.hour)"
+      title="${formatTime(marker.hour)}: ${marker.eventCount} events">
+      <div class="hour-tick"></div>
+      <div class="hour-label" if.bind="marker.hour % 4 === 0">
+        ${formatTime(marker.hour)}
+      </div>
+    </div>
+  </div>
+
+  <!-- Scrubber track -->
+  <div class="scrubber-track">
+    <!-- Activity background -->
+    <div class="activity-background">
+      <div 
+        repeat.for="marker of hourMarkersForTemplate"
+        class="activity-segment ${getHourActivityLevel(marker.eventCount)}"
+        style="left: ${marker.percentage}%; width: ${100/24}%">
+      </div>
+    </div>
+    
+    <!-- Scrubber handle -->
+    <div class="scrubber-handle" style="left: ${scrubberPositionForTemplate}%">
+      <div class="scrubber-handle-inner"></div>
+    </div>
+  </div>
+
+  <!-- Time navigation -->
+  <div class="time-navigation">
+    <input 
+      type="time" 
+      class="time-input"
+      value.bind="getCurrentTime()"
+      change.trigger="navigateToTime($event.target.value)"
+      step="300">
+    <button class="nav-button" click.trigger="jumpToHour(0)" title="Go to midnight">
+      00:00
+    </button>
+    <button class="nav-button" click.trigger="jumpToHour(6)" title="Go to 6 AM">
+      06:00
+    </button>
+    <button class="nav-button" click.trigger="jumpToHour(12)" title="Go to noon">
+      12:00
+    </button>
+    <button class="nav-button" click.trigger="jumpToHour(18)" title="Go to 6 PM">
+      18:00
+    </button>
+  </div>
+</div>
+
+<style>
+  .day-scrubber-container {
+    background: #f8f9fa;
+    border: 1px solid #e1e4e8;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 16px 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  .day-scrubber-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+
+  .day-scrubber-header h4 {
+    margin: 0;
+    color: #24292e;
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .day-stats {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: #586069;
+  }
+
+  .current-time {
+    font-weight: 600;
+    color: #0366d6;
+  }
+
+  .hour-markers {
+    position: relative;
+    height: 24px;
+    margin-bottom: 8px;
+  }
+
+  .hour-marker {
+    position: absolute;
+    height: 100%;
+    cursor: pointer;
+    z-index: 2;
+  }
+
+  .hour-tick {
+    width: 1px;
+    height: 12px;
+    background: #d1d5da;
+    margin: 0 auto;
+  }
+
+  .hour-marker.hour-low .hour-tick {
+    background: #40c463;
+    height: 16px;
+  }
+
+  .hour-marker.hour-medium .hour-tick {
+    background: #30a14e;
+    height: 20px;
+  }
+
+  .hour-marker.hour-high .hour-tick {
+    background: #216e39;
+    height: 24px;
+  }
+
+  .hour-marker.hour-max .hour-tick {
+    background: #0d2818;
+    height: 24px;
+    width: 2px;
+  }
+
+  .hour-label {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: #586069;
+    margin-top: 4px;
+    white-space: nowrap;
+  }
+
+  .scrubber-track {
+    position: relative;
+    height: 32px;
+    background: #f6f8fa;
+    border: 1px solid #e1e4e8;
+    border-radius: 16px;
+    cursor: pointer;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+
+  .activity-background {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+  }
+
+  .activity-segment {
+    height: 100%;
+    position: absolute;
+    top: 0;
+  }
+
+  .activity-segment.hour-none {
+    background: #ebedf0;
+  }
+
+  .activity-segment.hour-low {
+    background: #c6e48b;
+  }
+
+  .activity-segment.hour-medium {
+    background: #7bc96f;
+  }
+
+  .activity-segment.hour-high {
+    background: #239a3b;
+  }
+
+  .activity-segment.hour-max {
+    background: #196127;
+  }
+
+  .scrubber-handle {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 20px;
+    height: 20px;
+    z-index: 10;
+    cursor: grab;
+  }
+
+  .scrubber-handle:active {
+    cursor: grabbing;
+  }
+
+  .scrubber-handle-inner {
+    width: 100%;
+    height: 100%;
+    background: #0366d6;
+    border: 2px solid white;
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    transition: all 0.2s;
+  }
+
+  .scrubber-handle:hover .scrubber-handle-inner {
+    background: #0256cc;
+    transform: scale(1.1);
+  }
+
+  .time-navigation {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: center;
+  }
+
+  .time-input {
+    padding: 6px 8px;
+    border: 1px solid #d1d5da;
+    border-radius: 4px;
+    font-size: 12px;
+    background: white;
+  }
+
+  .nav-button {
+    padding: 4px 8px;
+    border: 1px solid #d1d5da;
+    border-radius: 4px;
+    background: white;
+    color: #586069;
+    cursor: pointer;
+    font-size: 11px;
+    transition: all 0.2s;
+  }
+
+  .nav-button:hover {
+    background: #f6f8fa;
+    border-color: #c6cbd1;
+  }
+
+  .nav-button:active {
+    background: #e1e4e8;
+  }
+
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .day-scrubber-container {
+      padding: 12px;
+    }
+
+    .day-scrubber-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .day-stats {
+      gap: 12px;
+    }
+
+    .time-navigation {
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .hour-label {
+      font-size: 9px;
+    }
+
+    .scrubber-handle {
+      width: 16px;
+      height: 16px;
+    }
+  }
+
+  /* Animation for smooth transitions */
+  .scrubber-handle-inner {
+    transition: transform 0.2s ease, background-color 0.2s ease;
+  }
+
+  .activity-segment {
+    transition: background-color 0.2s ease;
+  }
+
+  .hour-tick {
+    transition: all 0.2s ease;
+  }
+</style>

@@ -1,5 +1,45 @@
-<h3>Register ${registerId}</h3>
-<textarea 
-  value.bind="content & debounce:300" 
-  placeholder="Register ${registerId}">
-</textarea>
+<div class="textarea-container">
+  <h3>Register ${registerId}</h3>
+  <textarea 
+    value.bind="content & debounce:300" 
+    placeholder="Register ${registerId}"
+    readonly.bind="appState.isTimelineMode()"
+    focus.trigger="handleTextareaFocus()"
+    data-register-id="${registerId}"
+    class.bind="appState.isTimelineMode() ? 'timeline-mode' : ''">
+  </textarea>
+</div>
+
+<style>
+  .textarea-container {
+    margin-bottom: 16px;
+  }
+  
+  textarea.timeline-mode {
+    background-color: #f5f5f5;
+    border: 2px solid #007bff;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  
+  textarea.timeline-mode:hover {
+    background-color: #fff;
+    border-color: #0056b3;
+  }
+  
+  textarea.timeline-mode::placeholder {
+    color: #007bff;
+    font-style: italic;
+  }
+  
+  textarea:not(.timeline-mode) {
+    background-color: #fff;
+    border: 1px solid #ddd;
+    transition: all 0.2s ease;
+  }
+  
+  textarea:not(.timeline-mode):focus {
+    border-color: #007bff;
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+  }
+</style>
