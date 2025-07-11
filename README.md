@@ -1,138 +1,123 @@
 
-# 🚀 Stargate: Privacy-First Real-Time Collaboration Platform
+# 🚀 Stargate: Time-Aware Collaboration Platform
 
-> **Your data stays yours. Your network, your control.**
+> **Your data. Your timeline. Your control.**
 
-Stargate is a self-hosted, real-time collaboration platform that keeps your sensitive information exactly where it belongs—on your own infrastructure. Whether you're a family sharing memories, a development team iterating on code, or a research group collaborating on sensitive data, Stargate provides enterprise-grade collaboration without the privacy compromises.
+Stargate is a self-hosted, real-time collaboration platform that has grown beyond live sync. With built-in temporal navigation, Stargate now treats *time* as a first-class citizen, letting you rewind, replay, and reconstruct the entire arc of your work. It’s like version control for everything, code, notes, conversations, media, without the complexity or silos.
 
-## 🏠 **Perfect for Families**
-
-### Private File Sharing That Actually Stays Private
-- **🔒 Zero Cloud Dependencies**: Share family photos, videos, and documents without uploading to Google Drive, Dropbox, or any external service
-- **📱 Cross-Device Sync**: Access your files from any device on your home network—phones, tablets, laptops, smart TVs
-- **⚡ Instant Transfer**: Move large video files (GBs) between family devices in seconds, not hours
-- **🎯 Smart Organization**: Time-indexed search means finding "that video from Sarah's birthday last month" takes seconds, not scrolling through endless chat histories
-
-### Real-Time Family Communication
-- **👨‍👩‍👧‍👦 Shared Spaces**: Create dedicated "registers" for different family activities—vacation planning, grocery lists, homework schedules
-- **🔄 Live Updates**: See changes as they happen—no more "did you see my message?" confusion
-- **📅 Timeline Scrubbing**: Jump back to any point in your family's collaboration history—recover deleted notes, see how plans evolved
-
-**Use Cases:**
-- Planning family vacations with real-time itinerary collaboration
-- Sharing large video files from school events without cloud storage costs
-- Creating shared shopping lists that update instantly
-- Coordinating schedules across multiple family members
+Whether you're a family sharing moments, a dev team iterating on ideas, or a research group preserving provenance, Stargate helps you stay in sync *and* in control, with full historical visibility.
 
 ---
 
-## 👨‍💻 **Built for Developers**
+## 🌟 What Sets Stargate Apart
 
-### Non-Disruptive Collaborative Development
-- **🤝 Collision-Free Editing**: Multiple engineers can work in the same space simultaneously without conflicts—each person gets their own "register" that syncs in real-time
-- **🔍 Intelligent Search**: Find that critical code snippet or configuration from weeks ago in seconds—no more endless Slack scrolling
-- **⏰ Time-Travel Debugging**: Scrub through the timeline to see exactly how a bug was introduced or when a solution emerged
-- **🎯 Context Preservation**: Unlike chat apps that lose context, Stargate maintains persistent workspaces where ideas evolve organically
+Most collaboration tools treat history as a secondary feature. Stargate makes it core:
 
-### Enterprise-Ready Architecture
-- **🏢 On-Premises Control**: Deploy on your VPC, on-premises servers, or local development machines
-- **📊 Audit Trail**: Complete timeline of all changes for compliance and debugging
-- **🚀 Zero-Latency Sync**: WebSocket-based architecture ensures sub-millisecond updates across team members
-- **💾 Chunked File Transfer**: Handle large datasets, binaries, and multimedia without choking the network
+- **🗓️ GitHub-Style Activity Maps** – Visualize when and how work happens
+- **🕹️ Timeline Scrubbing** – Glide through your project’s history like a video
+- **🧭 Quantum Navigation** – Step through precise changes with full fidelity
+- **♻️ State Reconstruction** – Instantly rebuild the state of any moment in time
 
-**Development Team Use Cases:**
-- **Pair Programming Sessions**: Share code snippets and notes in real-time without screen sharing overhead
-- **Code Review Collaboration**: Collect feedback and iterate on solutions with full context preservation
-- **Configuration Management**: Collaboratively manage deployment configs and environment variables
-- **Research & Documentation**: Build knowledge bases that evolve with your team's understanding
-
-### Advanced Features for Technical Teams
-- **🔗 REQ Header Pattern**: Encrypted communication using base64-encoded JSON for secure data exchange
-- **📡 WebSocket + HTTP Fallback**: Automatic degradation ensures reliability across network conditions
-- **🗂️ Smart File Management**: Collision-resistant naming with hash-based identification
-- **⚙️ Configurable Limits**: Tune file sizes, chunk sizes, and timeout values for your infrastructure
+All backed by a privacy-first, zero-cloud architecture that keeps your data where it belongs, on your machines, under your rules.
 
 ---
 
-## 🎯 **Additional Use Cases**
+## 🛠️ Core Capabilities
 
-### **Content Creators & Media Teams**
-- **🎬 Video Production**: Share raw footage and collaborate on scripts without massive cloud storage bills
-- **📸 Photography Teams**: Real-time collaboration on photo selections and editing notes
-- **🎨 Design Collaboration**: Share large design files and iterate on creative concepts
+### 🧠 Time-Aware Collaboration
+- **Contribution Maps**: Visual heatmaps of activity across days and months
+- **Day & Hour Navigation**: Explore work at any granularity
+- **Event-Level Stepping**: Jump backward or forward through individual changes
+- **Recover, Rewind, Relearn**: Perfect for debugging, retrospectives, or postmortems
 
-### **Researchers & Academic Teams**
-- **🔬 Data Sharing**: Collaborate on sensitive research data without external cloud exposure
-- **📚 Literature Reviews**: Build collaborative knowledge bases with full edit history
-- **🧪 Experiment Tracking**: Document procedures and results in real-time collaboration spaces
+### ⚡ Real-Time Sync
+- **WebSocket Architecture**: Millisecond-latency updates with full-duplex channels
+- **Register-Based Collaboration**: Avoid overwrites; work in parallel with clarity
+- **Live vs Timeline Mode**: Move fluidly between active collaboration and historical review
 
-### **Small Business & Consulting**
-- **💼 Client Collaboration**: Share sensitive documents without exposing them to third-party services
-- **📋 Project Management**: Real-time planning and status updates with complete privacy
-- **📊 Financial Planning**: Collaborate on budgets and projections on secure, private infrastructure
-
----
-
-## 🛠️ **Technical Highlights**
-
-### **Architecture You Can Trust**
-- **Real-Time Sync**: WebSocket-based with automatic reconnection and heartbeat monitoring
-- **Streaming File Transfer**: Handle multi-GB files without memory exhaustion
-- **Timeline Persistence**: Complete edit history with timestamp scrubbing capabilities
-- **Type-Safe Communication**: Shared TypeScript interfaces ensure robust client-server communication
-
-### **Privacy & Security First**
-- **Self-Hosted**: Your data never leaves your control
-- **No External Dependencies**: No telemetry, no third-party analytics, no hidden cloud services
-- **Encrypted Communication**: REQ header pattern ensures secure data exchange
-- **Audit Trail**: Complete timeline of all activities for compliance and debugging
-
-### **Developer Experience**
-- **Modern Stack**: Aurelia 2.0, TypeScript, WebSocket, Express.js
-- **Clean Architecture**: Service-oriented design with dependency injection
-- **Comprehensive Logging**: Dual client/server logging with 14 log levels
-- **Hot Reload Development**: Parcel-based build system for rapid iteration
+### 🔐 Privacy by Design
+- **Fully Self-Hosted**: No SaaS, no spying, no third-party lock-in
+- **Immutable Event Store**: Append-only logs ensure auditability and integrity
+- **REQ Header Pattern**: Secure, base64-encoded metadata in transport, no leaky URLs
+- **No Telemetry**: Zero analytics, zero tracking, zero compromise
 
 ---
 
-## 🚀 **Getting Started**
+## 🧱 Architecture Overview
 
-Node: Install the [Bun runtime](https://bun.sh/) for fastest performance and best experience.
+### Backend (Bun + TypeScript)
+```
+EventStore (LibSQL) → TimeMapCalculator → StateReconstructor
+     ↓                        ↓                    ↓
+WebSocket Server → Message Broadcasting → Client Updates
+```
+
+### Frontend (Aurelia 2.0)
+```
+TimeMap → DayScrubber → QuantumNavigator
+   ↓           ↓              ↓
+MessageBus → CollaborationService → UI Components
+```
+
+### Feature Stack
+- **🔁 Event Sourcing** – Every change is an atomic event
+- **⚡ Smart Caching** – Instant, in-memory navigation via LRU strategies
+- **🔍 Integrated Search** – Powered by MiniSearch for blazing-fast lookup
+- **🧩 Modular Components** – Clean service-oriented architecture
+
+---
+
+## 🎯 Use Cases
+
+### 👨‍💻 Dev Teams
+- **Time-Travel Debugging** – Trace how issues evolved across time
+- **Context-Rich Code Reviews** – Understand the "why" behind the "what"
+- **Infra Drift Tracking** – Monitor and reconstruct config changes
+
+### 🔬 Researchers & Analysts
+- **Reproducibility by Default** – Every step, timestamped and restorable
+- **Parallel Inquiry** – Multiple researchers, no conflict
+- **Compliance & Audit** – Full history of data access and modifications
+
+### 🎨 Creative & Media Teams
+- **Nonlinear Iteration** – Skip versions, branch ideas, preserve forks
+- **Asset Commentary** – Annotate visuals, scripts, footage in real-time
+- **Process Memory** – Review your creative journey from start to finish
+
+---
+
+## 🚀 Getting Started
 
 ```bash
+# Prerequisites: Bun runtime (https://bun.sh)
+
 # Clone and install
 git clone <repository-url>
 cd stargate
-npm install
+bun install
 
-# Development mode (with hot reload)
-npm run dev
+# Development (hot reload)
+bun run dev
 
-# Production deployment
-npm run build && npm start
+# Production
+bun run build && bun run server
 ```
 
-**Default Access**: `https://localhost:5900
+Access Stargate at: `https://localhost:5900`
 
 ---
 
-## 🌟 **Why Choose Stargate?**
+## 🤔 Why "Time-Aware"?
 
-| **Cloud Platforms** | **Stargate** |
-|---------------------|--------------|
-| ❌ Your data on their servers | ✅ Your data on your infrastructure |
-| ❌ Monthly subscription fees | ✅ One-time setup, unlimited use |
-| ❌ Feature limitations and quotas | ✅ Unlimited files, users, and data |
-| ❌ Privacy policies that change | ✅ You control all privacy policies |
-| ❌ Internet dependency | ✅ Works on local networks |
-| ❌ Vendor lock-in | ✅ Open source, AGPLv3 licensed |
+Most tools trap you in the present. Stargate unlocks the past.
+Ideas evolve. Bugs emerge. Insights fade. With Stargate, you don’t just *collaborate in real time*, you can *retrace the path that got you there.*
 
-**Stargate doesn't just replace cloud collaboration—it reimagines it for a privacy-conscious world.**
+This isn’t just about syncing faster. It’s about remembering better.
 
 ---
 
-## 📄 **License**
+## 📄 License
 
-Licensed under AGPLv3 - ensuring the platform remains open and community-driven.
+Licensed under **AGPLv3** ,  Ensuring Stargate remains open, forkable, and community-driven.
 
-**Ready to take control of your collaboration?** Deploy Stargate today and experience what true digital privacy feels like.
+**Ready to sync, rewind, and replay?** Stargate is your portal. 🚪✨
