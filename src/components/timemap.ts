@@ -390,4 +390,5 @@ export class TimeMap {
     BrowserPrint('DEBUG', 'TimeMap: Quantum navigation forward');
     this.coordinator.navigateToEvent('next');
   }
+  
 }

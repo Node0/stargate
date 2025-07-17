@@ -69,72 +69,6 @@
     height: calc(100% - 10px); /* Adjust for padding/margins */
 }
 
-/* Mode Indicator & Peer Connection UI */
-.mode-container {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 1000;
-}
-
-.mode-indicator {
-  padding: 8px 16px;
-  border: none;
-  font-weight: bold;
-  cursor: default;
-  border-radius: 4px;
-  font-size: 14px;
-}
-
-.client-mode {
-  background-color: #c8e6c9; /* light pastel green */
-}
-
-.peer-mode {
-  background-color: #e1bee7; /* light pastel purple */
-  cursor: pointer;
-}
-
-.peer-connected {
-  background-color: #bbdefb; /* light pastel blue */
-}
-
-.peer-connect-ui {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.peer-connect-ui input {
-  padding: 6px 10px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  font-size: 14px;
-  width: 200px;
-}
-
-.peer-connect-ui button {
-  padding: 6px 12px;
-  background-color: #007bff;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-.peer-connect-ui button:disabled {
-  background-color: #ccc;
-  cursor: not-allowed;
-}
-
-.hidden {
-  display: none;
-}
 
 /* Files Interface Styling */
 .files-register {
@@ -367,16 +301,5 @@
     height: auto;
   }
   
-  .mode-container {
-    position: relative;
-    top: auto;
-    right: auto;
-    justify-content: center;
-    margin-bottom: 10px;
-  }
-  
-  .peer-connect-ui input {
-    width: 150px;
-  }
 }
 

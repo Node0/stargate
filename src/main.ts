@@ -12,7 +12,6 @@ import { TimelineCoordinatorService } from './services/timeline-coordinator.serv
 // Import components
 import { TextRegister } from './components/text-register';
 import { FileManager } from './components/file-manager';
-import { ModeIndicator } from './components/mode-indicator';
 import { TimeMap } from './components/timemap';
 import { DayScrubber } from './components/day-scrubber';
 
@@ -40,7 +39,6 @@ try {
       // Components
       TextRegister,
       FileManager,
-      ModeIndicator,
       TimeMap,
       DayScrubber,
       // Value converters

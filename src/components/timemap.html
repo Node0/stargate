@@ -29,9 +29,13 @@
   <div class="timemap-grid" if.bind="timeMapData && timeMapData.totalEvents > 0">
     <!-- Weekday labels -->
     <div class="weekday-labels">
+      <div class="weekday-label">Sun</div>
       <div class="weekday-label">Mon</div>
+      <div class="weekday-label">Tue</div>
       <div class="weekday-label">Wed</div>
+      <div class="weekday-label">Thu</div>
       <div class="weekday-label">Fri</div>
+      <div class="weekday-label">Sat</div>
     </div>
 
     <!-- Month labels -->
@@ -50,9 +54,9 @@
       <div repeat.for="week of dayGrid" class="week-column">
         <div 
           repeat.for="day of week" 
-          class="activity-day ${day.activityLevel} ${day.isSelected ? 'selected' : ''}"
-          click.trigger="day.date ? selectDay(day.date) : null"
-          title="${day.date ? day.date + ': ' + day.eventCount + ' events' : ''}">
+          class="activity-day ${day.activityLevel} ${day.isSelected ? 'selected' : ''} ${day.isCurrentYear ? '' : 'out-of-year'}"
+          click.trigger="day.isCurrentYear ? selectDay(day.date) : null"
+          title="${day.isCurrentYear ? day.date + ': ' + day.eventCount + ' events' : ''}">
         </div>
       </div>
     </div>
@@ -168,20 +172,19 @@
   }
 
   .weekday-labels {
-    position: absolute;
-    left: 0;
-    top: 45px;
     display: flex;
     flex-direction: column;
     gap: 2px;
     width: 30px;
+    margin-top: 30px;
+    float: left;
   }
 
   .weekday-label {
     font-size: 9px;
     color: #586069;
     text-align: right;
-    padding: 2px;
+    padding-right: 5px;
     height: 11px;
     line-height: 11px;
   }
@@ -206,6 +209,7 @@
 
   .month-label:hover {
     background: #f6f8fa;
+    border-radius: 3px;
   }
 
   .activity-grid {
@@ -258,6 +262,16 @@
 
   .activity-max {
     background: #216e39;
+  }
+
+  .activity-day.out-of-year {
+    background: transparent;
+    border-color: transparent;
+    cursor: default;
+  }
+
+  .activity-day.out-of-year:hover {
+    border-color: transparent;
   }
 
   .timemap-empty {

@@ -65,6 +65,11 @@ export class TimelineCoordinatorService {
       this.handleServerResponse(response);
     });
     
+    // === Scrubber Position Events ===
+    this.messageBus.subscribe('timeline:scrubber_position', (positionData) => {
+      this.handleScrubberPosition(positionData);
+    });
+    
     BrowserPrint('DEBUG', 'Timeline coordinator event handlers set up');
   }
   
@@ -157,6 +162,26 @@ export class TimelineCoordinatorService {
         break;
       default:
         BrowserPrint('DEBUG', `Unknown timeline response action: ${action}`);
+    }
+  }
+  
+  private handleScrubberPosition(positionData: any): void {
+    const { eventIndex, totalEvents, timestamp } = positionData;
+    
+    BrowserPrint('DEBUG', `Scrubber position update: event ${eventIndex}/${totalEvents}`);
+    
+    // Update current event index for quantum navigation
+    if (eventIndex !== this.currentEventIndex) {
+      this.currentEventIndex = eventIndex;
+      this.state.currentTimestamp = timestamp;
+      
+      // Enable/disable quantum navigation buttons based on position
+      this.messageBus.publish('quantum:update_state', {
+        canGoBack: eventIndex > 0,
+        canGoForward: eventIndex < totalEvents - 1,
+        currentIndex: eventIndex,
+        totalEvents: totalEvents
+      });
     }
   }
   

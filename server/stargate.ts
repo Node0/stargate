@@ -14,6 +14,7 @@ import { Print, ErrorInterceptor, RequestEncoder, FileManager } from './utilitie
 import { EventStore } from './services/event-store';
 import { TimeMapCalculator } from './services/timemap-calculator';
 import { SearchIndexManager } from './services/search-index-manager';
+import { StateReconstructor } from './services/state-reconstructor';
 
 // Global uncaught error and exception capture
 ErrorInterceptor();
@@ -95,6 +96,7 @@ export class Stargate {
   private eventStore: EventStore;
   private timeMapCalculator: TimeMapCalculator;
   private searchIndexManager: SearchIndexManager;
+  private stateReconstructor: StateReconstructor;
   private clientSequences: Map<string, number> = new Map();
 
   constructor() {
@@ -132,6 +134,9 @@ export class Stargate {
 
     // Initialize search index manager
     this.searchIndexManager = new SearchIndexManager(this.eventStore);
+    
+    // Initialize state reconstructor
+    this.stateReconstructor = new StateReconstructor(this.eventStore);
 
     // Set up multer for streaming file uploads after FileManager is ready
     this.setupMulter();
@@ -605,6 +610,89 @@ export class Stargate {
       });
     }
   }
+  
+  private async handleTimelineRequest(clientId: string, message: any): Promise<void> {
+    const { action, req } = message;
+    
+    try {
+      // Decode request data if present
+      let requestData: any = {};
+      if (req) {
+        const { success, body } = RequestEncoder.decode(req);
+        if (!success) {
+          this.sendToClient(clientId, { 
+            type: 'timeline_response', 
+            action, 
+            error: 'Invalid request encoding' 
+          });
+          return;
+        }
+        requestData = body;
+      }
+      
+      Print('DEBUG', `Processing timeline action: ${action}`);
+      
+      switch (action) {
+        case 'reconstruct_state':
+          if (!requestData.timestamp) {
+            this.sendToClient(clientId, { 
+              type: 'timeline_response', 
+              action, 
+              error: 'Timestamp parameter required' 
+            });
+            return;
+          }
+          
+          // Reconstruct state at the given timestamp
+          const state = await this.stateReconstructor.getStateAtTimestamp(requestData.timestamp);
+          
+          this.sendToClient(clientId, {
+            type: 'timeline_response',
+            action: 'state_reconstructed',
+            data: state
+          });
+          
+          Print('DEBUG', `Sent reconstructed state to ${clientId} for timestamp ${requestData.timestamp}`);
+          break;
+          
+        case 'get_state_at_event':
+          if (!requestData.eventId) {
+            this.sendToClient(clientId, { 
+              type: 'timeline_response', 
+              action, 
+              error: 'EventId parameter required' 
+            });
+            return;
+          }
+          
+          // Reconstruct state at a specific event
+          const eventState = await this.stateReconstructor.getStateAtEvent(requestData.eventId);
+          
+          this.sendToClient(clientId, {
+            type: 'timeline_response',
+            action: 'state_reconstructed',
+            data: eventState
+          });
+          
+          Print('DEBUG', `Sent reconstructed state to ${clientId} for event ${requestData.eventId}`);
+          break;
+          
+        default:
+          this.sendToClient(clientId, { 
+            type: 'timeline_response', 
+            action,
+            error: `Unknown timeline action: ${action}` 
+          });
+      }
+    } catch (error) {
+      Print('ERROR', `Timeline request error: ${(error as Error).message}`);
+      this.sendToClient(clientId, { 
+        type: 'timeline_response', 
+        action,
+        error: (error as Error).message 
+      });
+    }
+  }
 
   // Handle browser console log messages
   private handleBrowserLog(clientId: string, logData: any): void {
@@ -719,6 +807,9 @@ export class Stargate {
         this.handleSearchRequest(clientId, data);
       } else if (data.type === 'browser_log') {
         this.handleBrowserLog(clientId, data);
+      } else if (data.type === 'timeline_request') {
+        Print('DEBUG', `Handling timeline request from ${clientId}`);
+        this.handleTimelineRequest(clientId, data);
       } else {
         // Default behavior: broadcast to all clients (for text collaboration)
         Print('DEBUG', `Broadcasting text collaboration message from ${clientId} to ${this.wss.clients.size} clients`);

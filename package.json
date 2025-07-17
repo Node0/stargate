@@ -5,7 +5,7 @@
   "license": "Affero GPL v3.0",
   "type": "module",
   "scripts": {
-    "start": "npm run build && npm run server",
+    "start": "rm -rf dist .parcel-cache && npm run build && npm run server",
     "server": "bun run server/server.ts --hostname=0.0.0.0 --port=5900",
     "build": "parcel build src/index.html --dist-dir dist",
     "dev": "parcel serve src/index.html --https --cert ./server.cert --key ./server.key --port 5900",
