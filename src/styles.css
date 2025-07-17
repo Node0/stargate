@@ -329,32 +329,49 @@
   
   /* Class-based approach that works reliably */
   .register-container.has-focus {
-    gap: 8px;
+    gap: 8px !important;
   }
   
+  /* Focused register gets much more space - use MUCH higher ratio */
   .textarea-container.focused {
-    flex: 6 !important;
-    min-width: 200px;
+    flex: 95 !important; /* Extreme ratio for 95% expansion */
+    flex-grow: 95 !important;
+    flex-shrink: 0 !important;
+    flex-basis: 0 !important;
+    max-width: none !important;
+    width: auto !important;
+    min-width: 400px !important;
     box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.4) !important;
     border-radius: 6px;
     z-index: 10;
     background: rgba(248, 249, 250, 0.8);
   }
   
+  /* Non-focused registers get minimal space */
   .register-container.has-focus .textarea-container:not(.focused) {
     flex: 1 !important;
+    flex-grow: 1 !important;
+    flex-shrink: 2 !important; /* Allow more shrinking */
+    flex-basis: 0 !important;
     opacity: 0.7;
-    min-width: 120px;
+    max-width: 150px !important; /* Cap them smaller */
+    min-width: 80px !important; /* Allow them to get narrower */
+    width: 150px !important;
   }
   
-  /* Fallback: :has() selector support */
+  /* Fallback: :has() selector support with same strong values */
   .register-container:has(textarea:focus) {
-    gap: 8px;
+    gap: 8px !important;
   }
   
   .register-container:has(textarea:focus) .textarea-container:has(textarea:focus) {
-    flex: 6 !important;
-    min-width: 200px;
+    flex: 95 !important;
+    flex-grow: 95 !important;
+    flex-shrink: 0 !important;
+    flex-basis: 0 !important;
+    max-width: none !important;
+    width: auto !important;
+    min-width: 400px !important;
     box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.4) !important;
     border-radius: 6px;
     z-index: 10;
@@ -363,8 +380,13 @@
   
   .register-container:has(textarea:focus) .textarea-container:not(:has(textarea:focus)) {
     flex: 1 !important;
+    flex-grow: 1 !important;
+    flex-shrink: 2 !important;
+    flex-basis: 0 !important;
     opacity: 0.7;
-    min-width: 120px;
+    max-width: 150px !important;
+    min-width: 80px !important;
+    width: 150px !important;
   }
   
   /* Ensure textareas fill their containers */
@@ -374,13 +396,7 @@
     min-height: 200px;
   }
   
-  /* Files section - ensure it doesn't interfere */
-  .files-register {
-    flex: 0 0 auto !important;
-    width: 100% !important;
-    margin-top: 20px;
-    order: 10;
-  }
+  /* File manager is now outside the register container, no special handling needed */
 }
 
 /* Portrait Mobile: Vertical focus expansion (original behavior) */
