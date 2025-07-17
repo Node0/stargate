@@ -303,3 +303,289 @@
   
 }
 
+/* ========================================
+   RESPONSIVE FOCUS STATES
+   ======================================== */
+
+/* Desktop and Landscape: Horizontal focus expansion */
+@media screen and (min-width: 769px), 
+       screen and (max-width: 768px) and (orientation: landscape) {
+  
+  /* Override existing flex layout */
+  .register-container {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 10px;
+    transition: gap 0.3s ease;
+    width: 90% !important;
+  }
+  
+  .textarea-container {
+    flex: 1;
+    transition: flex 0.3s ease, min-width 0.3s ease, box-shadow 0.3s ease;
+    min-width: 150px;
+    position: relative;
+  }
+  
+  /* Class-based approach that works reliably */
+  .register-container.has-focus {
+    gap: 8px;
+  }
+  
+  .textarea-container.focused {
+    flex: 6 !important;
+    min-width: 200px;
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.4) !important;
+    border-radius: 6px;
+    z-index: 10;
+    background: rgba(248, 249, 250, 0.8);
+  }
+  
+  .register-container.has-focus .textarea-container:not(.focused) {
+    flex: 1 !important;
+    opacity: 0.7;
+    min-width: 120px;
+  }
+  
+  /* Fallback: :has() selector support */
+  .register-container:has(textarea:focus) {
+    gap: 8px;
+  }
+  
+  .register-container:has(textarea:focus) .textarea-container:has(textarea:focus) {
+    flex: 6 !important;
+    min-width: 200px;
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.4) !important;
+    border-radius: 6px;
+    z-index: 10;
+    background: rgba(248, 249, 250, 0.8);
+  }
+  
+  .register-container:has(textarea:focus) .textarea-container:not(:has(textarea:focus)) {
+    flex: 1 !important;
+    opacity: 0.7;
+    min-width: 120px;
+  }
+  
+  /* Ensure textareas fill their containers */
+  .textarea-container textarea {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 200px;
+  }
+  
+  /* Files section - ensure it doesn't interfere */
+  .files-register {
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    margin-top: 20px;
+    order: 10;
+  }
+}
+
+/* Portrait Mobile: Vertical focus expansion (original behavior) */
+@media screen and (max-width: 768px) and (orientation: portrait) {
+  
+  /* Stack vertically */
+  .register-container {
+    flex-direction: column;
+    width: 100%;
+    padding: 10px;
+    gap: 10px;
+  }
+  
+  .textarea-container {
+    width: 100%;
+    position: relative;
+    transition: height 0.3s ease;
+    min-height: 100px;
+  }
+  
+  /* Default state - all registers equal height */
+  .textarea-container textarea {
+    height: 150px;
+    width: 100%;
+    transition: height 0.3s ease;
+  }
+  
+  /* Focused state - expand to 50vh */
+  .textarea-container:has(textarea:focus) textarea {
+    height: 50vh;
+  }
+  
+  /* Shrink non-focused textareas */
+  .register-container:has(textarea:focus) .textarea-container:not(:has(textarea:focus)) textarea {
+    height: 80px;
+    opacity: 0.7;
+  }
+  
+  /* Files section - Full width below registers */
+  .files-register {
+    width: 100%;
+    order: 4;
+    margin-top: 20px;
+  }
+}
+
+
+/* Fallback for browsers without :has() support */
+@supports not selector(:has(textarea:focus)) {
+  /* Desktop/Landscape fallback */
+  @media screen and (min-width: 769px), 
+         screen and (max-width: 768px) and (orientation: landscape) {
+    
+    .register-container.has-focus {
+      gap: 8px;
+    }
+    
+    .textarea-container.focused {
+      flex: 6 !important;
+      box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.4) !important;
+      border-radius: 6px;
+      z-index: 10;
+      background: rgba(248, 249, 250, 0.8);
+      min-width: 200px;
+    }
+    
+    .register-container.has-focus .textarea-container:not(.focused) {
+      flex: 1 !important;
+      opacity: 0.7;
+      min-width: 120px;
+    }
+  }
+  
+  /* Portrait fallback */
+  @media screen and (max-width: 768px) and (orientation: portrait) {
+    .textarea-container.focused textarea {
+      height: 50vh;
+    }
+    
+    .register-container.has-focus .textarea-container:not(.focused) textarea {
+      height: 80px;
+      opacity: 0.7;
+    }
+  }
+}
+
+/* Common mobile styles (both orientations) */
+@media screen and (max-width: 768px) {
+  /* TimeMap - scrollable */
+  .timemap-container {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Day Scrubber - touch-friendly */
+  .scrubber-track {
+    height: 44px;
+  }
+  
+  .scrubber-handle {
+    width: 32px;
+    height: 32px;
+  }
+  
+  /* Headers */
+  h1 {
+    font-size: 1.5em;
+    text-align: center;
+    padding: 10px;
+  }
+}
+
+/* iOS-specific fixes */
+@supports (-webkit-touch-callout: none) {
+  textarea,
+  input[type="text"],
+  input[type="search"],
+  input[type="time"] {
+    font-size: 16px !important;
+  }
+}
+
+/* Safe areas for notched devices */
+@supports (padding: env(safe-area-inset-top)) {
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-top: env(safe-area-inset-top);
+  }
+  
+  @media screen and (max-width: 768px) {
+    .register-container {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+  }
+}
+
+/* Fine-tuning for specific breakpoints */
+
+/* Large desktop - even distribution */
+@media screen and (min-width: 1440px) {
+  .register-container:has(textarea:focus) .textarea-container:has(textarea:focus) {
+    flex: 4; /* Slightly less than 50% on very wide screens */
+    max-width: 800px; /* Cap maximum width */
+  }
+}
+
+/* Small landscape phones - special handling */
+@media screen and (max-width: 768px) and (max-height: 450px) and (orientation: landscape) {
+  .textarea-container {
+    min-width: 120px; /* Even smaller minimum for tiny screens */
+  }
+  
+  /* Reduce gaps in tight landscape */
+  .register-container {
+    gap: 5px;
+  }
+  
+  .register-container:has(textarea:focus) {
+    gap: 3px;
+  }
+}
+
+/* File table adjustments for mobile */
+@media screen and (max-width: 768px) {
+ .file-list {
+   overflow-x: auto;
+ }
+ 
+ #fileTable {
+   font-size: 12px;
+ }
+ 
+ #fileTable th,
+ #fileTable td {
+   padding: 6px 4px;
+ }
+ 
+ /* Hide less important columns on very small screens */
+ @media screen and (max-width: 480px) {
+   #fileTable th:nth-child(4), /* Uploader */
+   #fileTable td:nth-child(4),
+   #fileTable th:nth-child(5), /* Hash */
+   #fileTable td:nth-child(5) {
+     display: none;
+   }
+ }
+}
+
+/* Day scrubber mobile improvements */
+@media screen and (max-width: 768px) {
+ .day-scrubber-container {
+   margin: 10px;
+ }
+ 
+ .time-navigation {
+   flex-wrap: wrap;
+   justify-content: center;
+ }
+ 
+ .time-input {
+   width: 100%;
+   max-width: 200px;
+   margin-bottom: 8px;
+ }
+}
+

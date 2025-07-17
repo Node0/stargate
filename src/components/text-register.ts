@@ -41,6 +41,9 @@ export class TextRegister {
     // Get textarea element for advanced functionality
     this.textarea = document.querySelector(`[data-register-id="${this.registerId}"]`) as HTMLTextAreaElement;
     
+    // Add focus/blur handlers for responsive layout
+    this.setupResponsiveFocus();
+    
     // Subscribe to collaboration mode changes
     this.modeUnsubscribe = this.collaborationModeService.subscribe((mode) => {
       this.collaborationMode = mode;
@@ -276,5 +279,51 @@ export class TextRegister {
   // Get activity indicators for this register
   public getActivityIndicators(): RegisterActivity[] {
     return this.collaborationModeService.getActivityForRegister(this.registerId);
+  }
+  
+  // Setup responsive focus behavior for horizontal expansion
+  private setupResponsiveFocus(): void {
+    if (!this.textarea) return;
+    
+    const container = this.textarea.closest('.textarea-container');
+    const registerContainer = container?.closest('.register-container');
+    
+    if (!container || !registerContainer) return;
+    
+    // Focus handler
+    this.textarea.addEventListener('focus', () => {
+      // Remove focused class from all containers
+      document.querySelectorAll('.textarea-container').forEach(el => {
+        el.classList.remove('focused');
+      });
+      document.querySelectorAll('.register-container').forEach(el => {
+        el.classList.remove('has-focus');
+      });
+      
+      // Add focused class to current container
+      container.classList.add('focused');
+      registerContainer.classList.add('has-focus');
+      
+      BrowserPrint('DEBUG', `Register ${this.registerId} focused - horizontal expansion enabled`);
+    });
+    
+    // Blur handler with delay to check if focus moved to another textarea
+    this.textarea.addEventListener('blur', () => {
+      setTimeout(() => {
+        // Check if any textarea still has focus
+        const anyFocused = document.querySelector('textarea:focus');
+        if (!anyFocused) {
+          // No textarea has focus, remove all focus classes
+          document.querySelectorAll('.register-container').forEach(el => {
+            el.classList.remove('has-focus');
+          });
+          document.querySelectorAll('.textarea-container').forEach(el => {
+            el.classList.remove('focused');
+          });
+          
+          BrowserPrint('DEBUG', `All registers blurred - horizontal expansion disabled`);
+        }
+      }, 100); // Small delay to allow focus to move
+    });
   }
 }
