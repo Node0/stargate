@@ -27,39 +27,32 @@
 
   <!-- TimeMap Grid - GitHub Style -->
   <div class="timemap-grid" if.bind="timeMapData && timeMapData.totalEvents > 0">
-    <!-- Weekday labels -->
-    <div class="weekday-labels">
-      <div class="weekday-label">Sun</div>
-      <div class="weekday-label">Mon</div>
-      <div class="weekday-label">Tue</div>
-      <div class="weekday-label">Wed</div>
-      <div class="weekday-label">Thu</div>
-      <div class="weekday-label">Fri</div>
-      <div class="weekday-label">Sat</div>
-    </div>
-
-    <!-- Month labels -->
-    <div class="month-labels">
-      <div 
-        repeat.for="month of months" 
-        class="month-label"
-        click.trigger="selectMonth(currentYear, $index + 1)"
-        title="Click to view ${month} ${currentYear}">
-        ${month}
-      </div>
-    </div>
-
-    <!-- Activity grid -->
-    <div class="activity-grid">
-      <div repeat.for="week of dayGrid" class="week-column">
-        <div 
-          repeat.for="day of week" 
-          class="activity-day ${day.activityLevel} ${day.isSelected ? 'selected' : ''} ${day.isCurrentYear ? '' : 'out-of-year'}"
-          click.trigger="day.isCurrentYear ? selectDay(day.date) : null"
-          title="${day.isCurrentYear ? day.date + ': ' + day.eventCount + ' events' : ''}">
-        </div>
-      </div>
-    </div>
+    <table class="contribution-table">
+      <thead>
+        <tr>
+          <td class="weekday-spacer"></td>
+          <td 
+            repeat.for="monthInfo of monthSpans"
+            class="month-header"
+            colspan.bind="monthInfo.weeks"
+            click.trigger="selectMonth(currentYear, monthInfo.index + 1)"
+            title="Click to view ${monthInfo.name} ${currentYear}">
+            ${monthInfo.name}
+          </td>
+        </tr>
+      </thead>
+      <tbody>
+        <tr repeat.for="dayIndex of 7" class="day-row">
+          <td class="weekday-label">${weekDays[dayIndex]}</td>
+          <td 
+            repeat.for="week of dayGrid"
+            class="activity-day ${week[dayIndex].activityLevel} ${week[dayIndex].isSelected ? 'selected' : ''} ${week[dayIndex].isCurrentYear ? '' : 'out-of-year'}"
+            click.trigger="week[dayIndex].isCurrentYear ? selectDay(week[dayIndex].date) : null"
+            title="${week[dayIndex].isCurrentYear ? week[dayIndex].date + ': ' + week[dayIndex].eventCount + ' events' : ''}">
+          </td>
+        </tr>
+      </tbody>
+    </table>
   </div>
 
   <!-- Empty state -->
@@ -171,13 +164,29 @@
     position: relative;
   }
 
-  .weekday-labels {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+  .contribution-table {
+    border-spacing: 2px;
+    width: 100%;
+  }
+
+  .weekday-spacer {
     width: 30px;
-    margin-top: 30px;
-    float: left;
+    height: 13px;
+  }
+
+  .month-header {
+    font-size: 10px;
+    color: #586069;
+    cursor: pointer;
+    text-align: center;
+    padding: 2px 4px;
+    height: 13px;
+    border-radius: 3px;
+    transition: background 0.2s;
+  }
+
+  .month-header:hover {
+    background: #f6f8fa;
   }
 
   .weekday-label {
@@ -185,44 +194,13 @@
     color: #586069;
     text-align: right;
     padding-right: 5px;
+    width: 30px;
     height: 11px;
     line-height: 11px;
   }
 
-  .month-labels {
-    display: flex;
-    gap: 2px;
-    margin-bottom: 8px;
-    margin-left: 35px;
-  }
-
-  .month-label {
-    font-size: 10px;
-    color: #586069;
-    cursor: pointer;
-    border-radius: 3px;
-    transition: background 0.2s;
-    padding: 2px 4px;
-    flex: 1;
-    text-align: center;
-  }
-
-  .month-label:hover {
-    background: #f6f8fa;
-    border-radius: 3px;
-  }
-
-  .activity-grid {
-    display: flex;
-    gap: 2px;
-    margin-left: 35px;
-    overflow-x: auto;
-  }
-
-  .week-column {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+  .day-row {
+    height: 11px;
   }
 
   .activity-day {

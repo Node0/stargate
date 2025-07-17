@@ -33,8 +33,10 @@ export class TimeMap {
   // Visual properties
   years: number[] = [];
   months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   dayGrid: DayCell[][] = [];
+  monthStartPositions: number[] = [];
+  monthSpans: Array<{name: string, weeks: number, index: number}> = [];
   
   // Component lifecycle
   private unsubscribeTimeMapData?: () => void;
@@ -250,6 +252,9 @@ export class TimeMap {
   private generateYearGrid(year: number): DayCell[][] {
     const grid: DayCell[][] = [];
     
+    // Initialize month positions tracking
+    this.monthStartPositions = new Array(12).fill(-1);
+    
     // Start from the first Sunday of the year or before
     const startOfYear = new Date(year, 0, 1);
     const startDate = new Date(startOfYear);
@@ -267,19 +272,29 @@ export class TimeMap {
     
     // Generate weeks
     let currentDate = new Date(startDate);
+    let weekIndex = 0;
     
     while (currentDate <= endDate) {
       const week: DayCell[] = [];
       
       // Generate 7 days for this week
       for (let day = 0; day < 7; day++) {
-        const dateStr = this.formatDate(currentDate);
+        const iterDate = new Date(currentDate);
+        
+        // Track when we hit the 1st of each month in the target year
+        if (iterDate.getDate() === 1 && 
+            iterDate.getFullYear() === year && 
+            this.monthStartPositions[iterDate.getMonth()] === -1) {
+          this.monthStartPositions[iterDate.getMonth()] = weekIndex;
+        }
+        
+        const dateStr = this.formatDate(iterDate);
         const eventCount = this.timeMapData?.daysData[dateStr] || 0;
-        const isCurrentYear = currentDate.getFullYear() === year;
+        const isCurrentYear = iterDate.getFullYear() === year;
         
         const dayCell: DayCell = {
           date: isCurrentYear ? dateStr : '',
-          dayNumber: currentDate.getDate(),
+          dayNumber: iterDate.getDate(),
           eventCount,
           activityLevel: this.getActivityLevel(eventCount),
           isSelected: dateStr === this.selectedDate,
@@ -294,7 +309,25 @@ export class TimeMap {
       }
       
       grid.push(week);
+      weekIndex++;
     }
+    
+    // Fill in any missing month positions with estimates
+    for (let i = 0; i < 12; i++) {
+      if (this.monthStartPositions[i] === -1) {
+        // Estimate based on the month
+        const monthStart = new Date(year, i, 1);
+        const yearStart = new Date(year, 0, 1);
+        const daysSinceYearStart = Math.floor((monthStart.getTime() - yearStart.getTime()) / (1000 * 60 * 60 * 24));
+        const estimatedWeek = Math.floor(daysSinceYearStart / 7);
+        this.monthStartPositions[i] = Math.min(weekIndex - 1, estimatedWeek);
+      }
+    }
+    
+    BrowserPrint('DEBUG', `Month positions for ${year}: ${JSON.stringify(this.monthStartPositions)}`);
+    
+    // Calculate month spans for table colspan
+    this.calculateMonthSpans(weekIndex);
     
     return grid;
   }
@@ -389,6 +422,27 @@ export class TimeMap {
   quantumForward(): void {
     BrowserPrint('DEBUG', 'TimeMap: Quantum navigation forward');
     this.coordinator.navigateToEvent('next');
+  }
+  
+  private calculateMonthSpans(totalWeeks: number): void {
+    this.monthSpans = [];
+    
+    for (let i = 0; i < 12; i++) {
+      const monthStart = this.monthStartPositions[i];
+      const monthEnd = i === 11 ? totalWeeks - 1 : this.monthStartPositions[i + 1] - 1;
+      const weekSpan = monthEnd - monthStart + 1;
+      
+      // Only include months that have at least 1 week visible
+      if (weekSpan > 0) {
+        this.monthSpans.push({
+          name: this.months[i],
+          weeks: weekSpan,
+          index: i
+        });
+      }
+    }
+    
+    BrowserPrint('DEBUG', `Month spans: ${JSON.stringify(this.monthSpans)}`);
   }
   
 }
