@@ -11,7 +11,7 @@
     "req_header_max_size": 2048,
     "enforce_req_header": true,
     "file_validation": {
-      "max_size_mb": 5000,
+      "max_size_mb": 8000,
       "allowed_extensions": ["*"],
       "websocket_size_limit_mb": 50,
       "http_streaming_threshold_mb": 50,
