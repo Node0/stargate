@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import WebSocket, { WebSocketServer } from 'ws';
 import multer from 'multer';
 import { ArgumentParser } from 'argparse';
+import net from 'net';
 
 // ES module compatibility
 const __filename = fileURLToPath(import.meta.url);
@@ -15,6 +16,7 @@ import { EventStore } from './services/event-store';
 import { TimeMapCalculator } from './services/timemap-calculator';
 import { SearchIndexManager } from './services/search-index-manager';
 import { StateReconstructor } from './services/state-reconstructor';
+import { SSLCertificateManager } from './services/ssl-certificate-manager';
 
 // Global uncaught error and exception capture
 ErrorInterceptor();
@@ -97,6 +99,7 @@ export class Stargate {
   private timeMapCalculator: TimeMapCalculator;
   private searchIndexManager: SearchIndexManager;
   private stateReconstructor: StateReconstructor;
+  private sslManager: SSLCertificateManager;
   private clientSequences: Map<string, number> = new Map();
 
   constructor() {
@@ -107,15 +110,15 @@ export class Stargate {
     this.wsHeartbeatInterval = null;
     this.tempCleanupInterval = null;
 
-    // Load SSL options
-    this.sslOptions = {
-      key: fs.readFileSync(path.resolve(__dirname, '../server.key')),
-      cert: fs.readFileSync(path.resolve(__dirname, '../server.cert')),
-    };
+    // Initialize SSL certificate manager
+    this.sslManager = new SSLCertificateManager(path.resolve(__dirname, '..'));
 
-    // Create HTTPS server before setupRoutes
-    this.server = https.createServer(this.sslOptions, this.app);
-    this.wss = new WebSocketServer({ noServer: true });
+    // SSL options will be set in start() method after certificate provisioning
+    this.sslOptions = {} as https.ServerOptions;
+    
+    // Server and WebSocket will be created in start() method after SSL setup
+    this.server = {} as https.Server;
+    this.wss = {} as WebSocketServer;
 
     // Load configuration and set up middleware and routes
     this.loadConfig();
@@ -142,20 +145,64 @@ export class Stargate {
     this.setupMulter();
 
     this.setupMiddleware();
-    this.setupRoutes();
-    this.initializeWebSocketHandlers();
+    // Note: setupRoutes() and initializeWebSocketHandlers() will be called in start() after server creation
 
     Print('INFO', 'Stargate instantiated');
   }
 
-  // Parse command-line arguments
+  // Check if a port is available by attempting to bind to it
+  private async isPortAvailable(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const server = net.createServer();
+      
+      server.on('error', () => {
+        resolve(false); // Port is in use or restricted
+      });
+      
+      server.on('listening', () => {
+        server.close(() => {
+          resolve(true); // Port is available
+        });
+      });
+      
+      server.listen(port, '127.0.0.1');
+    });
+  }
+
+  // Parse command-line arguments with priority: env var → argparse → 443 → 8083 fallback
   private parseArguments(): ParsedArgs {
     const parser = new ArgumentParser({
       description: 'Collaborative Register WebSocket Server',
     });
     parser.add_argument('--hostname', { help: 'Hostname for the server', default: '0.0.0.0' });
-    parser.add_argument('--port', { help: 'Port for the server', type: 'int', default: 5900 });
-    return parser.parse_args();
+    parser.add_argument('--server-port', { help: 'Port for the server', type: 'int', dest: 'port' });
+    
+    const args = parser.parse_args();
+    
+    // Port priority: $SERVER_PORT env var → --server-port arg → 443 → 8083 if 443 in use
+    let port: number;
+    
+    if (process.env.SERVER_PORT) {
+      port = parseInt(process.env.SERVER_PORT, 10);
+      Print('INFO', `Using port from SERVER_PORT environment variable: ${port}`);
+    } else if (args.port) {
+      port = args.port;
+      Print('INFO', `Using port from --server-port argument: ${port}`);
+    } else {
+      // Default to 443, but for now we'll fallback to 8083 immediately
+      // since 443 typically requires root privileges
+      port = process.getuid && process.getuid() === 0 ? 443 : 8083;
+      if (port === 443) {
+        Print('INFO', `Using default port 443 (running as root)`);
+      } else {
+        Print('INFO', `Port 443 requires root privileges, using fallback port 8083`);
+      }
+    }
+    
+    return {
+      hostname: args.hostname,
+      port: port
+    };
   }
 
   // Load configuration from config.json
@@ -1393,7 +1440,31 @@ export class Stargate {
   }
 
   // Start the HTTPS and WebSocket server
-  start(): void {
+  async start(): Promise<void> {
+    Print('INFO', 'Starting Stargate server with SSL certificate management');
+    
+    // Provision SSL certificates
+    try {
+      const sslResult = await this.sslManager.ensureSSLCertificates();
+      Print('INFO', `SSL certificates ready via ${sslResult.method} method`);
+      
+      // Set SSL options from certificate manager
+      this.sslOptions = this.sslManager.getSSLOptions();
+      
+      // Create HTTPS server and WebSocket server now that SSL is ready
+      this.server = https.createServer(this.sslOptions, this.app);
+      this.wss = new WebSocketServer({ noServer: true });
+      
+      // Now that server is created, set up routes and WebSocket handlers
+      this.setupRoutes();
+      this.initializeWebSocketHandlers();
+      
+    } catch (error) {
+      Print('ERROR', `SSL certificate provisioning failed: ${(error as Error).message}`);
+      Print('ERROR', 'Cannot start server without valid SSL certificates');
+      process.exit(1);
+    }
+
     Print('DEBUG', `Starting server on ${this.args.hostname}:${this.args.port}`);
     Print('DEBUG', `Available routes:`);
     Print('DEBUG', `  GET / -> redirect to ${this.config.prog.collab_interface_url.route}`);
