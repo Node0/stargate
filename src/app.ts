@@ -111,9 +111,5 @@ export class App {
     this.showAdminPasswordModal = false;
     this.adminPassword = '';
     this.adminPasswordError = '';
-    // Remove admin=true from URL
-    const url = new URL(window.location.href);
-    url.searchParams.delete('admin');
-    window.history.replaceState({}, '', url.toString());
   }
 }

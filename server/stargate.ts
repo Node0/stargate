@@ -47,6 +47,7 @@ interface Config {
       legacy_base64_limit_mb?: number;
       max_concurrent_uploads?: number;
     };
+    admin_mode_url?: string;
     memory_management?: {
       max_temp_files?: number;
       cleanup_interval_ms?: number;
@@ -218,7 +219,7 @@ export class Stargate {
     }
 
     if (adminPassword) {
-      Print('INFO', 'Admin mode ENABLED - file archive/delete features available via &admin=true URL parameter');
+      Print('INFO', 'Admin mode ENABLED - file archive/delete features available via admin URL');
     } else {
       Print('WARNING', 'Admin mode DISABLED - no admin password configured');
       Print('INFO', 'To enable admin features, set ADMIN_PASSWORD env var or use --admin-password argument');
@@ -333,7 +334,12 @@ export class Stargate {
     // Serve the initial WebSocket availability check route with processed template
     const availabilityUrlRoute = this.config.prog.collab_interface_url.route;
     Print('DEBUG', `Registering main interface route: ${availabilityUrlRoute}`);
-    this.app.get(availabilityUrlRoute, this.handleIndexRoute.bind(this));
+    this.app.get(availabilityUrlRoute, (req: Request, res: Response) => this.handleIndexRoute(req, res, false));
+
+    // Register configurable admin mode URL
+    const adminModeUrl = '/' + (this.config.prog.admin_mode_url || 'admin_mode');
+    Print('DEBUG', `Registering admin mode route: ${adminModeUrl}`);
+    this.app.get(adminModeUrl, (req: Request, res: Response) => this.handleIndexRoute(req, res, true));
 
     // Add root route redirect to main interface
     Print('DEBUG', 'Registering root route redirect to main interface');
@@ -376,9 +382,9 @@ export class Stargate {
   }
 
   // Serve processed template with WebSocket route injection
-  private handleIndexRoute(req: Request, res: Response): void {
-    Print('DEBUG', `handleIndexRoute called for ${req.url}`);
-    const templatePath = path.join(__dirname, '../templates', 'index.template.html');
+  private handleIndexRoute(req: Request, res: Response, isAdmin: boolean = false): void {
+    Print('DEBUG', `handleIndexRoute called for ${req.url} (admin: ${isAdmin})`);
+    const templatePath = path.join(__dirname, '../dist', 'index.html');
     Print('DEBUG', `Template path: ${templatePath}`);
 
     fs.readFile(templatePath, 'utf8', (err, template) => {
@@ -395,7 +401,15 @@ export class Stargate {
       const websocketUpgradeRoute = this.config.prog.websocket_server_url.route;
       Print('DEBUG', `WebSocket route from config: ${websocketUpgradeRoute}`);
 
-      const processedHtml = template.replace('[[WEBSOCKET_UPGRADE_ROUTE]]', websocketUpgradeRoute);
+      let processedHtml = template.replace('[[WEBSOCKET_UPGRADE_ROUTE]]', websocketUpgradeRoute);
+
+      // Inject admin mode flag when accessed via admin URL
+      if (isAdmin) {
+        const adminScript = '<script>window.__STARGATE_ADMIN_MODE=true;</script>';
+        processedHtml = processedHtml.replace('<body>', `<body>${adminScript}`);
+        Print('INFO', `Admin mode flag injected for ${req.url}`);
+      }
+
       Print('DEBUG', `Template processed, WebSocket route injected`);
 
       res.setHeader('Content-Type', 'text/html');
@@ -1726,6 +1740,7 @@ export class Stargate {
     Print('DEBUG', `Available routes:`);
     Print('DEBUG', `  GET / -> redirect to ${this.config.prog.collab_interface_url.route}`);
     Print('DEBUG', `  GET ${this.config.prog.collab_interface_url.route} -> main interface`);
+    Print('DEBUG', `  GET /${this.config.prog.admin_mode_url || 'admin_mode'} -> admin interface`);
     Print('DEBUG', `  POST /api/upload -> file upload`);
     Print('DEBUG', `  GET /api/files -> file list`);
     Print('DEBUG', `  GET /api/download/:filename -> file download`);

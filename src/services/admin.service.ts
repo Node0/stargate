@@ -31,16 +31,14 @@ export class AdminService {
     await this.checkAdminMode();
   }
 
-  // Check URL for admin=true parameter and verify session
+  // Check if page was served via the admin mode URL
   async checkAdminMode(): Promise<void> {
-    const urlParams = new URLSearchParams(window.location.search);
-    const adminParam = urlParams.get('admin');
+    const isAdminUrl = !!(window as any).__STARGATE_ADMIN_MODE;
 
-    BrowserPrint('DEBUG', `URL search params: ${window.location.search}`);
-    BrowserPrint('DEBUG', `Admin param value: ${adminParam}`);
+    BrowserPrint('DEBUG', `Admin mode flag: ${isAdminUrl}`);
 
-    if (adminParam === 'true') {
-      BrowserPrint('INFO', 'Admin mode requested via URL parameter');
+    if (isAdminUrl) {
+      BrowserPrint('INFO', 'Admin mode requested via admin URL');
       this.state.isAdminMode = true;
 
       // Check if admin is configured on server and if session is valid
@@ -62,7 +60,7 @@ export class AdminService {
         BrowserPrint('INFO', 'Admin already authenticated via cookie');
       }
     } else {
-      BrowserPrint('DEBUG', 'Admin mode not requested (no admin=true in URL)');
+      BrowserPrint('DEBUG', 'Admin mode not requested (not served via admin URL)');
     }
   }
 
