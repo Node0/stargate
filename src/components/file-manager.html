@@ -51,8 +51,21 @@
           <td>${file.timestamp | dateFormat}</td>
           <td>${file.uploaderHostname}</td>
           <td class="hash-cell">${file.hash}</td>
-          <td>
+          <td class="actions-cell">
             <button click.trigger="downloadFile(file)" class="download-btn">Download</button>
+            <div class="actions-menu-container" if.bind="showAdminActions">
+              <button class="actions-hamburger" click.trigger="toggleActionsMenu(file, $event)" title="Actions">
+                <span class="hamburger-icon">&#8942;</span>
+              </button>
+              <div class="actions-dropdown" if.bind="activeActionsMenu === (file.storedName || file.hash)">
+                <button class="action-btn archive-btn" click.trigger="archiveFile(file)">
+                  Archive
+                </button>
+                <button class="action-btn delete-btn" click.trigger="adminDeleteFile(file)">
+                  Delete
+                </button>
+              </div>
+            </div>
           </td>
         </tr>
       </tbody>

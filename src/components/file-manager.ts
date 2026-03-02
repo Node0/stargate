@@ -1,5 +1,6 @@
 import { BrowserPrint } from '../browser-logger';
 import { CollaborationService } from '../services/collaboration.service';
+import { AdminService, AdminState } from '../services/admin.service';
 import { inject } from 'aurelia';
 
 interface FileInfo {
@@ -11,7 +12,7 @@ interface FileInfo {
   storedName?: string;
 }
 
-@inject(CollaborationService)
+@inject(CollaborationService, AdminService)
 export class FileManager {
   files: FileInfo[] = [];
   filteredFiles: FileInfo[] = [];
@@ -19,41 +20,71 @@ export class FileManager {
   sortColumn: string = 'timestamp';
   sortAscending: boolean = false;
   isConnected: boolean = false;
-  
+
+  // Admin state
+  isAdminMode: boolean = false;
+  isAdminAuthenticated: boolean = false;
+  showAdminActions: boolean = false; // Computed from isAdminMode && isAdminAuthenticated
+  activeActionsMenu: string | null = null; // Track which file's action menu is open
+
   // Refs
   dropZone: HTMLElement;
   fileInput: HTMLInputElement;
-  
+
   private fileUpdateUnsubscribe?: () => void;
   private connectionUnsubscribe?: () => void;
-  
+  private adminUnsubscribe?: () => void;
+
   // Use constructor injection
-  constructor(private collaboration: CollaborationService) {}
+  constructor(
+    private collaboration: CollaborationService,
+    private adminService: AdminService
+  ) {}
   
   attached(): void {
     BrowserPrint('INFO', 'File manager attached');
-    
+
     // Service is already injected and available
     this.fileUpdateUnsubscribe = this.collaboration.subscribeToFileUpdates((files) => {
       BrowserPrint('INFO', `Received file list update: ${files.length} files`);
       this.files = files;
       this.filterFiles();
     });
-    
+
     // Subscribe to connection status
     this.connectionUnsubscribe = this.collaboration.subscribeToConnection((connected) => {
       this.isConnected = connected;
     });
-    
+
+    // Subscribe to admin state changes
+    this.adminUnsubscribe = this.adminService.subscribe((state: AdminState) => {
+      this.isAdminMode = state.isAdminMode;
+      this.isAdminAuthenticated = state.isAuthenticated;
+      this.showAdminActions = state.isAdminMode && state.isAuthenticated;
+      BrowserPrint('DEBUG', `Admin state updated: mode=${state.isAdminMode}, auth=${state.isAuthenticated}, showActions=${this.showAdminActions}`);
+    });
+
+    // Close action menu when clicking outside
+    document.addEventListener('click', this.handleDocumentClick);
+
     // Initial load
     this.loadFiles();
   }
-  
+
   detached(): void {
     BrowserPrint('INFO', 'File manager detached');
     this.fileUpdateUnsubscribe?.();
     this.connectionUnsubscribe?.();
+    this.adminUnsubscribe?.();
+    document.removeEventListener('click', this.handleDocumentClick);
   }
+
+  private handleDocumentClick = (event: MouseEvent): void => {
+    const target = event.target as HTMLElement;
+    if (!target.closest('.actions-menu-container')) {
+      this.activeActionsMenu = null;
+    }
+  };
   
   searchFilterChanged(): void {
     this.filterFiles();
@@ -199,4 +230,55 @@ export class FileManager {
     BrowserPrint('INFO', 'Downloading all files...');
     // Implementation depends on backend support
   }
+
+  // Actions menu methods
+  toggleActionsMenu(file: FileInfo, event: MouseEvent): void {
+    event.stopPropagation();
+    const fileId = file.storedName || file.hash;
+    BrowserPrint('DEBUG', `Toggle actions menu for file: ${fileId}, current active: ${this.activeActionsMenu}`);
+    if (this.activeActionsMenu === fileId) {
+      this.activeActionsMenu = null;
+    } else {
+      this.activeActionsMenu = fileId;
+    }
+    BrowserPrint('DEBUG', `Actions menu now: ${this.activeActionsMenu}`);
+  }
+
+  // Admin file management methods
+  async archiveFile(file: FileInfo): Promise<void> {
+    if (!this.isAdminAuthenticated) {
+      BrowserPrint('WARNING', 'Archive attempted without admin authentication');
+      return;
+    }
+
+    const filename = file.storedName || file.hash;
+    if (!confirm(`Archive ${file.displayName}? The file will be moved to the archived folder.`)) {
+      return;
+    }
+
+    this.activeActionsMenu = null;
+    const success = await this.adminService.archiveFile(filename);
+    if (success) {
+      await this.loadFiles();
+    }
+  }
+
+  async adminDeleteFile(file: FileInfo): Promise<void> {
+    if (!this.isAdminAuthenticated) {
+      BrowserPrint('WARNING', 'Delete attempted without admin authentication');
+      return;
+    }
+
+    const filename = file.storedName || file.hash;
+    if (!confirm(`PERMANENTLY DELETE ${file.displayName}? This action cannot be undone!`)) {
+      return;
+    }
+
+    this.activeActionsMenu = null;
+    const success = await this.adminService.deleteFilePermanently(filename);
+    if (success) {
+      await this.loadFiles();
+    }
+  }
+
 }

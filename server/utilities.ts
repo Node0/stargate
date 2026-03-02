@@ -229,17 +229,26 @@ interface Config {
 
 export class FileManager {
   private storageDir: string;
+  private archivedDir: string;
   private config: Config;
   private fileMetadata: Map<string, FileInfo>;
 
   constructor(storageDir: string, config: Config) {
     this.storageDir = storageDir;
+    this.archivedDir = path.join(storageDir, 'archived');
     this.config = config;
     this.fileMetadata = new Map();
 
+    // Create main storage directory if it doesn't exist
     if (!fs.existsSync(this.storageDir)) {
       fs.mkdirSync(this.storageDir, { recursive: true });
       Print('INFO', `Created storage directory: ${this.storageDir}`);
+    }
+
+    // Create archived directory if it doesn't exist
+    if (!fs.existsSync(this.archivedDir)) {
+      fs.mkdirSync(this.archivedDir, { recursive: true });
+      Print('INFO', `Created archived directory: ${this.archivedDir}`);
     }
   }
 
@@ -346,6 +355,31 @@ export class FileManager {
       Print('ERROR', `File deletion failed: ${(error as Error).message}`);
       throw error;
     }
+  }
+
+  async archiveFile(filename: string): Promise<boolean> {
+    try {
+      const sourcePath = path.join(this.storageDir, filename);
+      const destPath = path.join(this.archivedDir, filename);
+
+      if (!fs.existsSync(sourcePath)) {
+        Print('WARNING', `File not found for archiving: ${filename}`);
+        return false;
+      }
+
+      // Move file to archived directory
+      await fs.promises.rename(sourcePath, destPath);
+      this.fileMetadata.delete(filename);
+      Print('INFO', `File archived: ${filename}`);
+      return true;
+    } catch (error) {
+      Print('ERROR', `File archival failed: ${(error as Error).message}`);
+      throw error;
+    }
+  }
+
+  getArchivedDir(): string {
+    return this.archivedDir;
   }
 
   async getFileData(filename: string): Promise<Buffer> {

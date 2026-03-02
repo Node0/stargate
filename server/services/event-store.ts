@@ -10,12 +10,26 @@ const __dirname = path.dirname(__filename);
 
 export interface StargateEvent {
   id?: number;
-  event_type: 'text_change' | 'file_upload' | 'file_delete';
+  event_type: 'text_change' | 'file_upload' | 'file_delete' | 'file_archive';
   entity_id: string;
   payload: any;
   timestamp: number;
   client_id: string;
   sequence_num: number;
+}
+
+export interface FileRecord {
+  id?: number;
+  stored_name: string;
+  display_name: string;
+  hash: string;
+  size: number;
+  uploader_hostname: string;
+  upload_timestamp: number;
+  archived: boolean;
+  archived_timestamp: number | null;
+  deleted: boolean;
+  deleted_timestamp: number | null;
 }
 
 export class EventStore {
@@ -59,12 +73,34 @@ export class EventStore {
           UNIQUE(client_id, sequence_num)
         );
       `);
-      
+
       await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_timestamp ON events(timestamp);`);
       await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_entity_timestamp ON events(entity_id, timestamp);`);
       await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_date ON events(date(timestamp/1000, 'unixepoch'));`);
       await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_event_type ON events(event_type);`);
-      
+
+      // Create files table for tracking file lifecycle (archive/delete status)
+      await this.db.execute(`
+        CREATE TABLE IF NOT EXISTS files (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          stored_name TEXT NOT NULL UNIQUE,
+          display_name TEXT NOT NULL,
+          hash TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          uploader_hostname TEXT,
+          upload_timestamp INTEGER NOT NULL,
+          archived INTEGER DEFAULT 0,
+          archived_timestamp INTEGER,
+          deleted INTEGER DEFAULT 0,
+          deleted_timestamp INTEGER
+        );
+      `);
+
+      await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_files_stored_name ON files(stored_name);`);
+      await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_files_hash ON files(hash);`);
+      await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_files_archived ON files(archived);`);
+      await this.db.execute(`CREATE INDEX IF NOT EXISTS idx_files_deleted ON files(deleted);`);
+
       Print('INFO', 'EventStore schema initialized');
     } catch (error) {
       Print('ERROR', `Failed to initialize schema: ${(error as Error).message}`);
@@ -178,6 +214,206 @@ export class EventStore {
     }
   }
   
+  // File record management methods
+
+  async createFileRecord(fileInfo: {
+    storedName: string;
+    displayName: string;
+    hash: string;
+    size: number;
+    uploaderHostname: string;
+  }): Promise<FileRecord> {
+    const timestamp = Date.now();
+
+    try {
+      await this.db.execute({
+        sql: `INSERT INTO files (stored_name, display_name, hash, size, uploader_hostname, upload_timestamp, archived, deleted)
+              VALUES (?, ?, ?, ?, ?, ?, 0, 0)`,
+        args: [
+          fileInfo.storedName,
+          fileInfo.displayName,
+          fileInfo.hash,
+          fileInfo.size,
+          fileInfo.uploaderHostname,
+          timestamp
+        ]
+      });
+
+      Print('DEBUG', `File record created: ${fileInfo.displayName} (${fileInfo.storedName})`);
+
+      return {
+        stored_name: fileInfo.storedName,
+        display_name: fileInfo.displayName,
+        hash: fileInfo.hash,
+        size: fileInfo.size,
+        uploader_hostname: fileInfo.uploaderHostname,
+        upload_timestamp: timestamp,
+        archived: false,
+        archived_timestamp: null,
+        deleted: false,
+        deleted_timestamp: null
+      };
+    } catch (error) {
+      Print('ERROR', `Failed to create file record: ${(error as Error).message}`);
+      throw error;
+    }
+  }
+
+  async archiveFileRecord(storedName: string): Promise<FileRecord | null> {
+    const timestamp = Date.now();
+
+    try {
+      await this.db.execute({
+        sql: `UPDATE files SET archived = 1, archived_timestamp = ? WHERE stored_name = ?`,
+        args: [timestamp, storedName]
+      });
+
+      const result = await this.db.execute({
+        sql: 'SELECT * FROM files WHERE stored_name = ?',
+        args: [storedName]
+      });
+
+      if (result.rows.length === 0) return null;
+
+      const row = result.rows[0];
+      Print('DEBUG', `File record archived: ${storedName}`);
+
+      return {
+        id: row.id as number,
+        stored_name: row.stored_name as string,
+        display_name: row.display_name as string,
+        hash: row.hash as string,
+        size: row.size as number,
+        uploader_hostname: row.uploader_hostname as string,
+        upload_timestamp: row.upload_timestamp as number,
+        archived: Boolean(row.archived),
+        archived_timestamp: row.archived_timestamp as number | null,
+        deleted: Boolean(row.deleted),
+        deleted_timestamp: row.deleted_timestamp as number | null
+      };
+    } catch (error) {
+      Print('ERROR', `Failed to archive file record: ${(error as Error).message}`);
+      throw error;
+    }
+  }
+
+  async deleteFileRecord(storedName: string): Promise<FileRecord | null> {
+    const timestamp = Date.now();
+
+    try {
+      await this.db.execute({
+        sql: `UPDATE files SET deleted = 1, deleted_timestamp = ? WHERE stored_name = ?`,
+        args: [timestamp, storedName]
+      });
+
+      const result = await this.db.execute({
+        sql: 'SELECT * FROM files WHERE stored_name = ?',
+        args: [storedName]
+      });
+
+      if (result.rows.length === 0) return null;
+
+      const row = result.rows[0];
+      Print('DEBUG', `File record marked as deleted: ${storedName}`);
+
+      return {
+        id: row.id as number,
+        stored_name: row.stored_name as string,
+        display_name: row.display_name as string,
+        hash: row.hash as string,
+        size: row.size as number,
+        uploader_hostname: row.uploader_hostname as string,
+        upload_timestamp: row.upload_timestamp as number,
+        archived: Boolean(row.archived),
+        archived_timestamp: row.archived_timestamp as number | null,
+        deleted: Boolean(row.deleted),
+        deleted_timestamp: row.deleted_timestamp as number | null
+      };
+    } catch (error) {
+      Print('ERROR', `Failed to delete file record: ${(error as Error).message}`);
+      throw error;
+    }
+  }
+
+  async getFileRecord(storedName: string): Promise<FileRecord | null> {
+    try {
+      const result = await this.db.execute({
+        sql: 'SELECT * FROM files WHERE stored_name = ?',
+        args: [storedName]
+      });
+
+      if (result.rows.length === 0) return null;
+
+      const row = result.rows[0];
+      return {
+        id: row.id as number,
+        stored_name: row.stored_name as string,
+        display_name: row.display_name as string,
+        hash: row.hash as string,
+        size: row.size as number,
+        uploader_hostname: row.uploader_hostname as string,
+        upload_timestamp: row.upload_timestamp as number,
+        archived: Boolean(row.archived),
+        archived_timestamp: row.archived_timestamp as number | null,
+        deleted: Boolean(row.deleted),
+        deleted_timestamp: row.deleted_timestamp as number | null
+      };
+    } catch (error) {
+      Print('ERROR', `Failed to get file record: ${(error as Error).message}`);
+      throw error;
+    }
+  }
+
+  async getActiveFileRecords(): Promise<FileRecord[]> {
+    try {
+      const result = await this.db.execute(
+        'SELECT * FROM files WHERE deleted = 0 AND archived = 0 ORDER BY upload_timestamp DESC'
+      );
+
+      return result.rows.map(row => ({
+        id: row.id as number,
+        stored_name: row.stored_name as string,
+        display_name: row.display_name as string,
+        hash: row.hash as string,
+        size: row.size as number,
+        uploader_hostname: row.uploader_hostname as string,
+        upload_timestamp: row.upload_timestamp as number,
+        archived: Boolean(row.archived),
+        archived_timestamp: row.archived_timestamp as number | null,
+        deleted: Boolean(row.deleted),
+        deleted_timestamp: row.deleted_timestamp as number | null
+      }));
+    } catch (error) {
+      Print('ERROR', `Failed to get active file records: ${(error as Error).message}`);
+      throw error;
+    }
+  }
+
+  async getArchivedFileRecords(): Promise<FileRecord[]> {
+    try {
+      const result = await this.db.execute(
+        'SELECT * FROM files WHERE archived = 1 AND deleted = 0 ORDER BY archived_timestamp DESC'
+      );
+
+      return result.rows.map(row => ({
+        id: row.id as number,
+        stored_name: row.stored_name as string,
+        display_name: row.display_name as string,
+        hash: row.hash as string,
+        size: row.size as number,
+        uploader_hostname: row.uploader_hostname as string,
+        upload_timestamp: row.upload_timestamp as number,
+        archived: Boolean(row.archived),
+        archived_timestamp: row.archived_timestamp as number | null,
+        deleted: Boolean(row.deleted),
+        deleted_timestamp: row.deleted_timestamp as number | null
+      }));
+    } catch (error) {
+      Print('ERROR', `Failed to get archived file records: ${(error as Error).message}`);
+      throw error;
+    }
+  }
+
   async close(): Promise<void> {
     try {
       await this.db.close();

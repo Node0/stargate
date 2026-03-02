@@ -1,7 +1,7 @@
 {
   "prog": {
     "logging_level": "debug",
-    "collab_interface_url": { "route": "/_cat/indices", "response_text": "Websocket Service available" },
+    "collab_interface_url": { "route": "/", "response_text": "Websocket Service available" },
     "websocket_server_url": { "route": "/_data_stream/app_logging_data" },
     "websocket_fallback_failure_event_threshold": 3,
     "oversize_file_in_mb": 50,

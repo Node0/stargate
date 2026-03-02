@@ -3,21 +3,49 @@
 <div class="stargate-workspace">
   <!-- TimeMap replaces the blue line -->
   <timemap></timemap>
-  
+
   <!-- Day scrubber (shown when day is selected) -->
   <day-scrubber></day-scrubber>
-  
+
   <h1>Collaboration Registers</h1>
   <div class="line gray-line"></div>
-  
+
   <div class="register-container">
-    <text-register 
-      repeat.for="register of registers" 
+    <text-register
+      repeat.for="register of registers"
       register-id.bind="register.id"
       content.bind="register.content">
     </text-register>
   </div>
-  
+
   <!-- File Manager moved outside register container -->
   <file-manager></file-manager>
+</div>
+
+<!-- Toast notifications container -->
+<div class="toast-container">
+  <div repeat.for="toast of toasts"
+       class="toast toast-${toast.type}"
+       click.trigger="removeToast(toast.id)">
+    ${toast.message}
+  </div>
+</div>
+
+<!-- Admin password modal -->
+<div class="modal-overlay" if.bind="showAdminPasswordModal">
+  <div class="modal admin-password-modal">
+    <h3>Admin Authentication Required</h3>
+    <p>Enter the admin password to access file management features.</p>
+    <div class="form-group">
+      <input type="password"
+             value.bind="adminPassword"
+             placeholder="Admin Password"
+             keypress.trigger="$event.key === 'Enter' && submitAdminPassword()">
+      <div class="error-message" if.bind="adminPasswordError">${adminPasswordError}</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" click.trigger="cancelAdminPassword()">Cancel</button>
+      <button class="btn-submit" click.trigger="submitAdminPassword()">Authenticate</button>
+    </div>
+  </div>
 </div>

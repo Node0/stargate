@@ -12,11 +12,12 @@ import net from 'net';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import { Print, ErrorInterceptor, RequestEncoder, FileManager } from './utilities';
-import { EventStore } from './services/event-store';
+import { EventStore, FileRecord } from './services/event-store';
 import { TimeMapCalculator } from './services/timemap-calculator';
 import { SearchIndexManager } from './services/search-index-manager';
 import { StateReconstructor } from './services/state-reconstructor';
 import { SSLCertificateManager } from './services/ssl-certificate-manager';
+import crypto from 'crypto';
 
 // Global uncaught error and exception capture
 ErrorInterceptor();
@@ -24,6 +25,7 @@ ErrorInterceptor();
 interface ParsedArgs {
   hostname: string;
   port: number;
+  adminPassword: string | null;
 }
 
 interface Config {
@@ -101,6 +103,7 @@ export class Stargate {
   private stateReconstructor: StateReconstructor;
   private sslManager: SSLCertificateManager;
   private clientSequences: Map<string, number> = new Map();
+  private adminSessions: Map<string, number> = new Map(); // token -> expiry timestamp
 
   constructor() {
     this.app = express();
@@ -176,7 +179,8 @@ export class Stargate {
     });
     parser.add_argument('--hostname', { help: 'Hostname for the server', default: '0.0.0.0' });
     parser.add_argument('--server-port', { help: 'Port for the server', type: 'int', dest: 'port' });
-    
+    parser.add_argument('--admin-password', { help: 'Admin password for file management operations', dest: 'adminPassword' });
+
     const args = parser.parse_args();
     
     // Port priority: $SERVER_PORT env var → --server-port arg → 443 → 8083 if 443 in use
@@ -199,9 +203,31 @@ export class Stargate {
       }
     }
     
+    // Admin password priority: $ADMIN_PASSWORD env var → --admin-password arg
+    let adminPassword: string | null = null;
+    let adminPasswordSource: string = 'none';
+
+    if (process.env.ADMIN_PASSWORD) {
+      adminPassword = process.env.ADMIN_PASSWORD;
+      adminPasswordSource = 'ADMIN_PASSWORD environment variable';
+      Print('INFO', `Admin password detected from: ${adminPasswordSource}`);
+    } else if (args.adminPassword) {
+      adminPassword = args.adminPassword;
+      adminPasswordSource = '--admin-password command line argument';
+      Print('INFO', `Admin password detected from: ${adminPasswordSource}`);
+    }
+
+    if (adminPassword) {
+      Print('INFO', 'Admin mode ENABLED - file archive/delete features available via &admin=true URL parameter');
+    } else {
+      Print('WARNING', 'Admin mode DISABLED - no admin password configured');
+      Print('INFO', 'To enable admin features, set ADMIN_PASSWORD env var or use --admin-password argument');
+    }
+
     return {
       hostname: args.hostname,
-      port: port
+      port: port,
+      adminPassword: adminPassword
     };
   }
 
@@ -324,6 +350,16 @@ export class Stargate {
     this.app.get('/_cat/files', this.handleFileListRequest.bind(this));
     this.app.get('/api/download/:filename', this.handleFileDownload.bind(this));
     this.app.delete('/api/delete/:filename', this.handleFileDelete.bind(this));
+
+    // Admin authentication endpoints
+    Print('DEBUG', 'Registering admin API endpoints: /api/admin/verify, /api/admin/check');
+    this.app.post('/api/admin/verify', this.handleAdminVerify.bind(this));
+    this.app.get('/api/admin/check', this.handleAdminCheck.bind(this));
+
+    // Admin-only file management endpoints (archive and permanent delete)
+    Print('DEBUG', 'Registering admin file management endpoints: /api/admin/archive/:filename, /api/admin/delete/:filename');
+    this.app.post('/api/admin/archive/:filename', this.handleFileArchive.bind(this));
+    this.app.delete('/api/admin/delete/:filename', this.handleAdminFileDelete.bind(this));
 
     // Handle WebSocket upgrade requests selectively based on the configured endpoint
     this.server.on('upgrade', (req, socket, head) => {
@@ -1105,7 +1141,7 @@ export class Stargate {
         const uploadEvent = await this.eventStore.recordEvent({
           event_type: 'file_upload',
           entity_id: fileInfo.storedName,
-          payload: { 
+          payload: {
             filename: fileInfo.displayName,
             storedName: fileInfo.storedName,
             size: fileInfo.size,
@@ -1114,11 +1150,20 @@ export class Stargate {
           client_id: clientId,
           sequence_num: sequenceNum
         });
-        
+
+        // Create file record in database for tracking archive/delete status
+        await this.eventStore.createFileRecord({
+          storedName: fileInfo.storedName,
+          displayName: fileInfo.displayName,
+          hash: fileInfo.hash,
+          size: fileInfo.size,
+          uploaderHostname: client.hostname || 'unknown'
+        });
+
         // Update search index and broadcast delta
         const indexDelta = this.searchIndexManager.handleIndexDelta(uploadEvent);
         this.broadcastIndexDelta(indexDelta);
-        
+
         Print('DEBUG', `Recorded file_upload event for ${fileInfo.displayName} (seq: ${sequenceNum})`);
 
         // Broadcast update to all clients
@@ -1224,7 +1269,7 @@ export class Stargate {
       const uploadEvent = await this.eventStore.recordEvent({
         event_type: 'file_upload',
         entity_id: fileInfo.storedName,
-        payload: { 
+        payload: {
           filename: fileInfo.displayName,
           storedName: fileInfo.storedName,
           size: fileInfo.size,
@@ -1233,11 +1278,20 @@ export class Stargate {
         client_id: clientId,
         sequence_num: sequenceNum
       });
-      
+
+      // Create file record in database for tracking archive/delete status
+      await this.eventStore.createFileRecord({
+        storedName: fileInfo.storedName,
+        displayName: fileInfo.displayName,
+        hash: fileInfo.hash,
+        size: fileInfo.size,
+        uploaderHostname: req.ip || 'unknown'
+      });
+
       // Update search index and broadcast delta
       const indexDelta = this.searchIndexManager.handleIndexDelta(uploadEvent);
       this.broadcastIndexDelta(indexDelta);
-      
+
       Print('DEBUG', `Recorded file_upload event for ${fileInfo.displayName} via HTTP (seq: ${sequenceNum})`);
 
       this.broadcastFileListUpdate();
@@ -1287,7 +1341,7 @@ export class Stargate {
       const uploadEvent = await this.eventStore.recordEvent({
         event_type: 'file_upload',
         entity_id: fileInfo.storedName,
-        payload: { 
+        payload: {
           filename: fileInfo.displayName,
           storedName: fileInfo.storedName,
           size: fileInfo.size,
@@ -1296,11 +1350,20 @@ export class Stargate {
         client_id: clientId,
         sequence_num: sequenceNum
       });
-      
+
+      // Create file record in database for tracking archive/delete status
+      await this.eventStore.createFileRecord({
+        storedName: fileInfo.storedName,
+        displayName: fileInfo.displayName,
+        hash: fileInfo.hash,
+        size: fileInfo.size,
+        uploaderHostname: req.ip || 'unknown'
+      });
+
       // Update search index and broadcast delta
       const indexDelta = this.searchIndexManager.handleIndexDelta(uploadEvent);
       this.broadcastIndexDelta(indexDelta);
-      
+
       Print('DEBUG', `Recorded file_upload event for ${fileInfo.displayName} via legacy HTTP (seq: ${sequenceNum})`);
 
       this.broadcastFileListUpdate();
@@ -1436,6 +1499,200 @@ export class Stargate {
       Print('ERROR', `File deletion failed: ${(error as Error).message}`);
       res.status(500);
       res.sendREQ!(false, { error: (error as Error).message });
+    }
+  }
+
+  // Helper to parse cookies from request header
+  private parseCookies(req: Request): Record<string, string> {
+    const cookies: Record<string, string> = {};
+    const cookieHeader = req.headers.cookie;
+    if (cookieHeader) {
+      cookieHeader.split(';').forEach(cookie => {
+        const [name, ...rest] = cookie.split('=');
+        if (name && rest.length > 0) {
+          cookies[name.trim()] = rest.join('=').trim();
+        }
+      });
+    }
+    return cookies;
+  }
+
+  // Validate admin session from cookie or token
+  private isValidAdminSession(req: Request): boolean {
+    const cookies = this.parseCookies(req);
+    const token = cookies['admin_token'];
+
+    if (!token) {
+      Print('DEBUG', 'No admin token in request');
+      return false;
+    }
+
+    const expiry = this.adminSessions.get(token);
+    if (!expiry) {
+      Print('DEBUG', 'Admin token not found in sessions');
+      return false;
+    }
+
+    if (Date.now() > expiry) {
+      this.adminSessions.delete(token);
+      Print('DEBUG', 'Admin token expired');
+      return false;
+    }
+
+    Print('DEBUG', 'Admin token validated successfully');
+    return true;
+  }
+
+  // Generate secure admin token
+  private generateAdminToken(): string {
+    return crypto.randomBytes(32).toString('hex');
+  }
+
+  // Handle admin password verification
+  private async handleAdminVerify(req: Request, res: Response): Promise<void> {
+    try {
+      const { password } = req.body;
+
+      if (!this.args.adminPassword) {
+        res.status(403).json({ error: 'Admin mode not configured on server' });
+        return;
+      }
+
+      if (!password) {
+        res.status(400).json({ error: 'Password required' });
+        return;
+      }
+
+      if (password !== this.args.adminPassword) {
+        Print('WARNING', `Failed admin login attempt from ${req.ip}`);
+        res.status(401).json({ error: 'Invalid password' });
+        return;
+      }
+
+      // Generate token and set 1-hour expiry
+      const token = this.generateAdminToken();
+      const expiry = Date.now() + (60 * 60 * 1000); // 1 hour
+      this.adminSessions.set(token, expiry);
+
+      // Set cookie with token (httpOnly for security, 1 hour expiry)
+      res.setHeader('Set-Cookie', `admin_token=${token}; HttpOnly; Secure; SameSite=Strict; Max-Age=3600; Path=/`);
+
+      Print('INFO', `Admin authenticated successfully from ${req.ip}`);
+      res.json({ success: true, message: 'Admin access granted', expiresIn: 3600 });
+    } catch (error) {
+      Print('ERROR', `Admin verification failed: ${(error as Error).message}`);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // Check if admin session is valid
+  private async handleAdminCheck(req: Request, res: Response): Promise<void> {
+    try {
+      if (!this.args.adminPassword) {
+        res.json({ configured: false, authenticated: false });
+        return;
+      }
+
+      const isValid = this.isValidAdminSession(req);
+      res.json({ configured: true, authenticated: isValid });
+    } catch (error) {
+      Print('ERROR', `Admin check failed: ${(error as Error).message}`);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // Handle file archival (admin only)
+  private async handleFileArchive(req: ExtendedRequest, res: ExtendedResponse): Promise<void> {
+    const { filename } = req.params;
+
+    // Check admin authentication
+    if (!this.isValidAdminSession(req)) {
+      res.status(401).json({ error: 'Admin authentication required' });
+      return;
+    }
+
+    try {
+      // Get file metadata before archiving
+      const fileRecord = await this.eventStore.getFileRecord(filename);
+
+      const archived = await this.fileManager.archiveFile(filename);
+      if (archived) {
+        // Update file record in database
+        await this.eventStore.archiveFileRecord(filename);
+
+        // Record file archive event
+        const clientId = `http_archive_${req.ip || 'unknown'}_${Date.now()}`;
+        const sequenceNum = this.getNextSequence(clientId);
+        await this.eventStore.recordEvent({
+          event_type: 'file_archive',
+          entity_id: filename,
+          payload: {
+            filename: filename,
+            displayName: fileRecord?.display_name || filename,
+            hash: fileRecord?.hash || '',
+            size: fileRecord?.size || 0
+          },
+          client_id: clientId,
+          sequence_num: sequenceNum
+        });
+        Print('DEBUG', `Recorded file_archive event for ${filename} via HTTP (seq: ${sequenceNum})`);
+
+        this.broadcastFileListUpdate();
+        res.json({ success: true, message: 'File archived successfully' });
+      } else {
+        res.status(404).json({ error: 'File not found' });
+      }
+    } catch (error) {
+      Print('ERROR', `File archival failed: ${(error as Error).message}`);
+      res.status(500).json({ error: (error as Error).message });
+    }
+  }
+
+  // Handle permanent file deletion (admin only)
+  private async handleAdminFileDelete(req: ExtendedRequest, res: ExtendedResponse): Promise<void> {
+    const { filename } = req.params;
+
+    // Check admin authentication
+    if (!this.isValidAdminSession(req)) {
+      res.status(401).json({ error: 'Admin authentication required' });
+      return;
+    }
+
+    try {
+      // Get file metadata before deleting
+      const fileRecord = await this.eventStore.getFileRecord(filename);
+
+      const deleted = await this.fileManager.deleteFile(filename);
+      if (deleted) {
+        // Update file record in database (mark as deleted, keep record)
+        await this.eventStore.deleteFileRecord(filename);
+
+        // Record file delete event
+        const clientId = `http_admin_delete_${req.ip || 'unknown'}_${Date.now()}`;
+        const sequenceNum = this.getNextSequence(clientId);
+        await this.eventStore.recordEvent({
+          event_type: 'file_delete',
+          entity_id: filename,
+          payload: {
+            filename: filename,
+            displayName: fileRecord?.display_name || filename,
+            hash: fileRecord?.hash || '',
+            size: fileRecord?.size || 0,
+            adminDelete: true
+          },
+          client_id: clientId,
+          sequence_num: sequenceNum
+        });
+        Print('DEBUG', `Recorded admin file_delete event for ${filename} via HTTP (seq: ${sequenceNum})`);
+
+        this.broadcastFileListUpdate();
+        res.json({ success: true, message: 'File permanently deleted' });
+      } else {
+        res.status(404).json({ error: 'File not found' });
+      }
+    } catch (error) {
+      Print('ERROR', `Admin file deletion failed: ${(error as Error).message}`);
+      res.status(500).json({ error: (error as Error).message });
     }
   }
 
